@@ -197,15 +197,6 @@ def calc_all_nds(imgs):
 
     nd_list = []
 
-#     # Add  Gao NDWI
-#     nd_list += [calc_nd(imgs, 2, 3)]
-#     # Add  MNDWI
-#     nd_list += [calc_nd(imgs, 0, 3)]
-#     # Add McFeeters NDWI band
-#     nd_list += [calc_nd(imgs, 0, 2)]
-#     # Add NDVI band
-#     nd_list += [calc_nd(imgs, 2, 1)]
-    
     # Add  Gao NDWI
     nd_list += [calc_nd(imgs, 3, 11)]
     # Add  MNDWI
@@ -339,10 +330,8 @@ def get_indices(src, done_ind, region_gpd=None):
 
     # Eliminate already predicted indices
     if done_ind.shape[0] > 0:
-        print(start_ind.flags['F_CONTIGUOUS'])
-        print(done_ind.flags['F_CONTIGUOUS'])
         start_in_done = np.in1d(start_ind.astype('int64').view('int64, int64'),
-                               done_ind.astype('int64').view('int64, int64'))
+                                done_ind.astype('int64').view('int64, int64'))
         start_ind = start_ind[~start_in_done]
     print('Num of tiles after done_ind removed:', start_ind.shape[0])
 
@@ -405,7 +394,6 @@ def main():
     model = load_model(args.model_checkpoint)
 
     batch_start_point = 0
-    print(start_ind.shape[0])
     while batch_start_point < start_ind.shape[0]:
         print('Starting loading batch {}'.format(batch_start_point))
         imgs, batch_indices, batch_start_point = load_image_batch(

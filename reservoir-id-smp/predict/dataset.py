@@ -1,16 +1,23 @@
+from torch.utils.data import Dataset as BaseDataset
 import os
 from skimage import io
 import numpy as np
-from torch.utils.data import Dataset as BaseDataset
-
 
 def normalize_image(ar, mean_std):
-    """Normalize to zero mean, 1 std"""
     return (ar - mean_std[0])/mean_std[1]
 
-
 class ResDataset(BaseDataset):
-    """ResDataset. Read images and apply preprocessing transformations."""
+    """CamVid Dataset. Read images, apply augmentation and preprocessing transformations.
+
+    Args:
+        imgs (ar):
+        augmentation (albumentations.Compose): data transfromation pipeline 
+            (e.g. flip, scale, etc.)
+        preprocessing (albumentations.Compose): data preprocessing 
+            (e.g. noralization, shape manipulation, etc.)
+
+    """
+
 
     def __init__(
             self,
@@ -23,13 +30,14 @@ class ResDataset(BaseDataset):
         self.preprocessing = preprocessing
         self.mean_std = mean_std
 
+
     def __getitem__(self, i):
 
         # read data
         image = self.imgs[i]
 
-        if self.mean_std is not None:
-            image = normalize_image(image, self.mean_std)
+#        if self.mean_std is not None:
+#            image = normalize_image(image, self.mean_std)
 
         # apply preprocessing
         if self.preprocessing:

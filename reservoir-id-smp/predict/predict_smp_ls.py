@@ -82,15 +82,14 @@ def normalized_diff(ar1, ar2):
 
 
 def calc_nd(imgs, band1, band2):
-    """Add band containing NDWI."""
+    """Add band containing NDWI.. Slightly different for LS and sentinel (dims)"""
 
-    nd = normalized_diff(
-            imgs[:, :, :, band1].astype('float64'),
-            imgs[:, :, :, band2].astype('float64'))
+    nd = normalized_diff(imgs[:,:,:,band1].astype('float64'),
+                         imgs[:,:,:,band2].astype('float64'))
 
     # Rescale to uint8
     nd = np.round(255.*(nd - (-1))/(1 - (-1)))
-    if nd.max() > 255:
+    if nd.max()>255:
         print(nd.max())
         print('Error: overflow')
 
@@ -200,7 +199,7 @@ def calc_all_nds(img):
     # Add NDVI band
     nd_list += [calc_nd(img, 3, 2)]
 
-    return np.stack(nd_list, axis=2)
+    return np.stack(nd_list, axis=3)
 
 
 def rescale_to_minmax_uint8(imgs, bands_minmax):
@@ -254,7 +253,7 @@ def open_sources(source_path):
 
 def get_done_list(out_dir):
     file_list = glob.glob(os.path.join(out_dir, 'pred_*.tif'))
-    ind_strs = [re.findall(r'[0-9]+', f) for f in file_list]
+    ind_strs = [re.findall(r'[0-9]+', os.path.basename(f)) for f in file_list]
     done_indices = np.asarray(ind_strs).astype(int)
 
     # Check for invalid ones (not in bounds)

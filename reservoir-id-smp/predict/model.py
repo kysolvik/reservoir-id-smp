@@ -3,6 +3,8 @@ import torch
 import numpy as np
 import segmentation_models_pytorch as smp
 import torchvision
+import rasterio
+import affine
 
 class ResModel(pl.LightningModule):
 
@@ -13,8 +15,23 @@ class ResModel(pl.LightningModule):
                                    classes=1,
                                    dropout=0.2)
                                )
-
         self.crop_transform = torchvision.transforms.CenterCrop(500)
+
+    def write_imgs(self, preds, outfile, geo_transform, crs):
+        """Write a batch of predictions to tiffs"""
+
+        preds[preds >= 0.5] = 1
+        preds[preds < 0.5] = 0
+        for i in range(preds.shape[0]):
+            new_dataset = rasterio.open(
+                outfile[i], 'w', driver='GTiff',
+                height=preds.shape[1], width=preds.shape[2],
+                count=1, dtype='uint8', compress='lzw',
+                crs=crs[i], nodata=0,
+                transform=geo_transform[i]
+            )
+            pred = preds[i]
+            new_dataset.write(pred.astype('uint8'), 1)
 
     def forward(self, image):
         # normalize image here
@@ -22,7 +39,6 @@ class ResModel(pl.LightningModule):
         return self.crop_transform(mask)
 
     def shared_step(self, batch, stage):
-        
         image = batch["image"]
 
         # Shape of the image should be (batch_size, num_channels, height, width)
@@ -45,9 +61,10 @@ class ResModel(pl.LightningModule):
         prob_mask = logits_mask.sigmoid()
         pred_mask = (prob_mask > 0.5).byte()
 
-
         return pred_mask
 
     
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        return self(batch['image']).sigmoid()
+        preds = self(batch['image']).sigmoid()[:, 0, :, :]
+        self.write_imgs(preds, batch['outfile'], batch['geo_transform'], batch['crs'])
+        eturn preds

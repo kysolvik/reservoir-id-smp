@@ -75,162 +75,6 @@ def argparse_init():
     return p
 
 
-def normalized_diff(ar1, ar2):
-    """Returns normalized difference of two arrays."""
-
-    return np.nan_to_num(((ar1 - ar2) / (ar1 + ar2)), 0)
-
-
-def calc_nd(imgs, band1, band2):
-    """Add band containing NDWI.. Slightly different for LS and sentinel (dims)"""
-
-    nd = normalized_diff(imgs[:,:,:,band1].astype('float64'),
-                         imgs[:,:,:,band2].astype('float64'))
-
-    # Rescale to uint8
-    nd = np.round(255.*(nd - (-1))/(1 - (-1)))
-    if nd.max()>255:
-        print(nd.max())
-        print('Error: overflow')
-
-    return nd.astype(np.uint8)
-
-
-def load_single_image(start_inds, src_list):
-    """Load single tile from list of src"""
-    row, col = start_inds[0], start_inds[1]
-    # First check if valid against for image
-    img_src = src_list[0]
-
-    base_img = img_src.read(window=((row, row + TILE_ROWS),
-                                    (col, col + TILE_COLS)))
-    if np.min(base_img) > 0:
-        out_tuple = (base_img, True)
-    else:
-        out_tuple = (None, False)
-
-    return out_tuple
-
-
-def load_image_batch(start_inds, batch_start_point, src_list):
-    """LOad full batch of images based on BATmCH_SIZE"""
-    imgs = []
-    img_count = 0
-    i = batch_start_point
-    invalid_list = []
-    valid_list = []
-    while img_count < BATCH_SIZE and i < start_inds.shape[0]:
-        new_img, valid_flag = load_single_image(start_inds[i], src_list)
-        if valid_flag:
-            imgs.append(new_img)
-            valid_list.append(start_inds[i])
-            img_count += 1
-        else:
-            invalid_list.append(start_inds[i])
-        i += 1
-
-    # Append invalid list to file
-    with open('invalid_indices.txt', 'a') as f:
-        for ind in invalid_list:
-            f.write("{},{}\n".format(ind[0], ind[1]))
-    print('Bypassed {} invalid images'.format(len(invalid_list)))
-    print('Predicting batch of {}'.format(img_count))
-
-    # Moveaxis is used to move bands to last axis
-    return np.moveaxis(np.stack(imgs), 1, 3), np.asarray(valid_list), i
-
-
-def write_imgs(preds, out_dims, out_dir, batch_indices, src_img):
-    """Write a batch of predictions to tiffs"""
-    preds[preds >= 0.5] = 255
-    preds[preds < 0.5] = 0
-    for i in range(batch_indices.shape[0]):
-        outfile = '{}/pred_{}-{}.tif'.format(
-            out_dir, batch_indices[i, 0], batch_indices[i, 1])
-
-        new_dataset = rasterio.open(
-            outfile, 'w', driver='GTiff',
-            height=out_dims[1], width=out_dims[0],
-            count=1, dtype='uint8', compress='lzw',
-            crs=src_img.crs, nodata=0,
-            transform=get_geotransform((batch_indices[i, 1],
-                                        batch_indices[i, 0]),
-                                       src_img.transform,
-                                       overlap=OVERLAP)
-        )
-        pred = preds[i]
-        new_dataset.write(pred.astype('uint8'), 1)
-
-
-def get_geotransform(indice_pair, src_transform, overlap):
-    """Calculate geotransform of a tile.
-
-    Notes:
-        Using .affine instead of .transform because it should work with all
-        rasterio > 0.9. See https://github.com/mapbox/rasterio/issues/86.
-
-    Args:
-        indice_pair (tuple): Row, Col indices of upper left corner of tile.
-        src_transform (tuple): Geo transform/affine of src image
-
-    """
-    if overlap > 0:
-        indice_pair = (indice_pair[0]+(overlap/2),
-                       indice_pair[1]+(overlap/2))
-    new_ul = [src_transform[2] + indice_pair[0]*src_transform[0] + indice_pair[1]*src_transform[1],
-              src_transform[5] + indice_pair[0]*src_transform[3] + indice_pair[1]*src_transform[4]]
-
-    new_affine = affine.Affine(src_transform[0], src_transform[1], new_ul[0],
-                               src_transform[3], src_transform[4], new_ul[1])
-
-    return new_affine
-
-
-def calc_all_nds(img):
-
-    nd_list =[]
-
-    # Add  Gao NDWI
-    nd_list += [calc_nd(img, 3, 4)]
-    # Add  MNDWI
-    nd_list += [calc_nd(img, 1, 4)]
-    # Add McFeeters NDWI band
-    nd_list += [calc_nd(img, 1, 3)]
-    # Add NDVI band
-    nd_list += [calc_nd(img, 3, 2)]
-
-    return np.stack(nd_list, axis=3)
-
-
-def rescale_to_minmax_uint8(imgs, bands_minmax):
-    """Rescales images to 0-255 based on (precalculated) min/maxes of bands"""
-    imgs = np.where(imgs > bands_minmax[1], bands_minmax[1], imgs)
-    imgs = (255. * (imgs.astype('float64') - bands_minmax[0]) / (bands_minmax[1] - bands_minmax[0]))
-    imgs = np.round(imgs)
-    if imgs.max() > 255:
-        print(imgs.max())
-        print('Error: overflow')
-    return imgs.astype(np.uint8)
-
-
-def preprocess(imgs, bands_minmax, mean_std, band_selection):
-    """Prep the input images"""
-    imgs = rescale_to_minmax_uint8(imgs, bands_minmax)
-    nds = calc_all_nds(imgs)
-    imgs = np.concatenate([imgs, nds], axis=3)[:, :, :, band_selection]
-    imgs = (imgs - mean_std[0])/mean_std[1]
-
-    return imgs
-
-
-def predict(model, data_loader):
-    """Apply model to prediction, convert to numpy array"""
-    trainer = pl.Trainer()
-    with torch.no_grad():
-        preds = np.vstack(trainer.predict(model, data_loader))[:, 0, :, :]
-    return preds
-
-
 def load_model(checkpoint_path):
     """Load the model weights from checkpoint"""
     model = ResModel.load_from_checkpoint(
@@ -328,7 +172,7 @@ def get_indices(src, done_ind, region_gpd=None):
         print(start_ind.flags['F_CONTIGUOUS'])
         print(done_ind.flags['F_CONTIGUOUS'])
         start_in_done = np.in1d(start_ind.astype('int64').view('int64, int64'),
-                               done_ind.astype('int64').view('int64, int64'))
+                                done_ind.astype('int64').view('int64, int64'))
         start_ind = start_ind[~start_in_done]
     print('Num of tiles after done_ind removed:', start_ind.shape[0])
 
@@ -338,50 +182,6 @@ def get_indices(src, done_ind, region_gpd=None):
         print('Num of tiles after geofilter:', start_ind.shape[0])
 
     return start_ind
-
-
-def to_tensor(x, **kwargs):
-    """Tensor needs reordered indices"""
-    return x.transpose(2, 0, 1).astype('float32')
-
-
-def get_preprocessing():
-    """Construct preprocessing transform
-
-    Args:
-        preprocessing_fn (callbale): data normalization function
-            (can be specific for each pretrained neural network)
-    Return:
-        transform: albumentations.Compose
-
-    """
-
-    _transform = [
-        albu.Lambda(image=to_tensor, mask=to_tensor),
-    ]
-    return albu.Compose(_transform)
-
-
-def write_pred_tiles(input_imgs, out_dims, out_dir, batch_indices, src_img):
-    """Write a batch of input tiles to tiffs"""
-    print(input_imgs.shape)
-    for i in range(batch_indices.shape[0]):
-        outfile = '{}/in_{}-{}.tif'.format(
-            out_dir, batch_indices[i, 0], batch_indices[i, 1])
-
-        new_dataset = rasterio.open(
-            outfile, 'w', driver='GTiff',
-            height=out_dims[1], width=out_dims[0],
-            count=input_imgs.shape[-1], dtype='float64', compress='lzw',
-            crs=src_img.crs, nodata=0,
-            transform=get_geotransform((batch_indices[i, 1],
-                                        batch_indices[i, 0]),
-                                       src_img.transform,
-                                       overlap=OVERLAP)
-        )
-        img = input_imgs[i]
-        for i in range(img.shape[-1]):
-            new_dataset.write(img[:,:,i], i+1)
 
 
 def main():
@@ -401,7 +201,7 @@ def main():
 
     # Get lists of indices to run
     done_ind = get_done_list(args.out_dir)
-    start_ind = get_indices(src_list[0], done_ind, region_gpd)
+    start_inds = get_indices(src_list[0], done_ind, region_gpd)
 
     # Calculate mins and maxes for scaling bands
     bands_minmax_all = np.load(args.bands_minmax_file)
@@ -412,28 +212,13 @@ def main():
     # Load model
     model = load_model(args.model_checkpoint)
 
-    batch_start_point = 0
-    print(start_ind.shape[0])
-    while batch_start_point < start_ind.shape[0]:
-        print('Starting loading batch {}'.format(batch_start_point))
-        imgs, batch_indices, batch_start_point = load_image_batch(
-                start_ind, batch_start_point, src_list)
-        print('Loaded')
-        imgs = preprocess(imgs, bands_minmax, mean_std, BAND_SELECTION)
-#        write_pred_tiles(imgs, [640, 640], './pred_tiles/', batch_indices, src_list[0])
-        print('Prepped')
-        ds = ResDataset(imgs, preprocessing=get_preprocessing(), mean_std=mean_std)
-        dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1)
-        out_imgs = predict(model, dl)
-        print(out_imgs.max())
-        print('Predicted')
-        write_imgs(out_imgs, [OUT_ROWS, OUT_COLS], args.out_dir,
-                   batch_indices, src_list[0])
-        print('Written')
-        gc.collect()
+    # Create dataset and loader
+    ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax)
+    dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1)
 
-    print('Done with batch, starting new from {}'.format(batch_start_point))
-
+    trainer = pl.Trainer()
+    with torch.no_grad():
+        trainer.predict(model, dl)
 
 if __name__ == '__main__':
     main()

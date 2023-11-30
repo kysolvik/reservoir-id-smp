@@ -1,12 +1,12 @@
 from torch.utils.data import Dataset as BaseDataset
+from torch.utils.data.dataloader import default_collate
+import torch
 import os
 from skimage import io
 import numpy as np
 import albumentations as albu
 import affine
 
-TILE_ROWS = 500
-TILE_COLS = 500
 
 class ResDataset(BaseDataset):
     """CamVid Dataset. Read images, apply augmentation and preprocessing transformations.
@@ -24,14 +24,23 @@ class ResDataset(BaseDataset):
             start_inds,
             fh,
             bands_minmax,
+            band_selection,
+            tile_rows,
+            tile_cols,
+            overlap,
+            out_dir,
             mean_std=None,
     ):
         self.ids = np.arange(start_inds.shape[0])
         self.start_inds = start_inds
         self.fh = fh
+        self.band_selection = band_selection
+        self.overlap = overlap
+        self.tile_rows = tile_rows
+        self.tile_cols = tile_cols
+        self.out_dir = out_dir
         self.bands_minmax = bands_minmax
         self.src_transform = self.fh.transform
-        self.crs = self.fh.crs
         self.preprocessing_to_tensor = self.get_preprocessing_to_tensor()
         self.mean_std = mean_std
 
@@ -82,11 +91,11 @@ class ResDataset(BaseDataset):
     def __getitem__(self, i):
 
         # read data
-        image = self.load_single_image()
+        image = self.load_single_image(self.start_inds[i])
         image = self.preprocess(image, self.bands_minmax, self.mean_std, self.band_selection)
 
-        if self.mean_std is not None:
-            image = self.normalize_image(image, self.mean_std)
+        # if self.mean_std is not None:
+        #    image = self.normalize_image(image, self.mean_std)
 
         # apply preprocessing
         if self.preprocessing_to_tensor:
@@ -94,7 +103,7 @@ class ResDataset(BaseDataset):
             image = sample['image']
 
         # Get geo transform information
-        geo_transform = self.get_geotransform(self.start_inds[i])
+        geo_transform = self.get_geotransform((self.start_inds[i,1], self.start_inds[i,0]))
 
         # Get output filename
         outfile = '{}/pred_{}-{}.tif'.format(
@@ -105,7 +114,7 @@ class ResDataset(BaseDataset):
         return {'image': image,
                 'geo_transform': geo_transform,
                 'outfile': outfile,
-                'crs': self.crs}
+                }
 
     def __len__(self):
         return len(self.ids)
@@ -117,17 +126,17 @@ class ResDataset(BaseDataset):
 
     def calc_all_nds(self, img):
 
-        nd_list  =[]
+        nd_list =[]
 
         # Add  Gao NDWI
-        nd_list += [self.calc_nd(img, 3, 4)]
+        nd_list += [self.calc_nd(img, 4, 5)]
         # Add  MNDWI
-        nd_list += [self.calc_nd(img, 1, 4)]
+        nd_list += [self.calc_nd(img, 2, 5)]
         # Add McFeeters NDWI band
-        nd_list += [self.calc_nd(img, 1, 3)]
+        nd_list += [self.calc_nd(img, 2, 4)]
         # Add NDVI band
-        nd_list += [self.calc_nd(img, 3, 2)]
-
+        nd_list += [self.calc_nd(img, 4, 3)]
+        
         return np.stack(nd_list, axis=2)
 
     def calc_nd(self, img, band1, band2):
@@ -154,8 +163,8 @@ class ResDataset(BaseDataset):
             print('Error: overflow')
         return img.astype(np.uint8)
 
-    def normalize_image(self, ar, mean_std):
-        return (ar - mean_std[0])/mean_std[1]
+#    def normalize_image(self, ar, mean_std):
+#        return (ar - mean_std[0])/mean_std[1]
 
     def preprocess(self, img, bands_minmax, mean_std, band_selection):
         """Prep the input images"""
@@ -163,15 +172,25 @@ class ResDataset(BaseDataset):
         nds = self.calc_all_nds(img)
         img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
         img = (img - mean_std[0])/mean_std[1]
+        # IMPORTANT: Remove first band (changes between landsat generations)
+        if img.shape[2] == 11:
+            img = img[:,:,1:]    
 
         return img
 
-    def load_single_image(self, start_inds, src_list):
+    def collate(self, batch):
+        batch_out = {}
+        for key in batch[0]:
+            batch_out[key] = [elem[key] for elem in batch]
+
+        batch_out['image'] = default_collate(batch_out['image'])
+        return batch_out
+
+
+    def load_single_image(self, start_inds):
         """Load single tile from list of src"""
         row, col = start_inds[0], start_inds[1]
-        # First check if valid against for image
-        img_src = src_list[0]
 
-        base_img = img_src.read(window=((row, row + TILE_ROWS),
-                                        (col, col + TILE_COLS)))
+        base_img = self.fh.read(window=((row, row + self.tile_rows),
+                                        (col, col + self.tile_cols)))
         return np.moveaxis(base_img, 0, 2)

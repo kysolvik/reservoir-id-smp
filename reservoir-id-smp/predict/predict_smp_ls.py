@@ -29,7 +29,7 @@ import segmentation_models_pytorch as smp
 import torchvision
 
 from dataset import ResDataset
-from model import ResModel
+from model import ResModelMAnet
 
 TILE_ROWS = 640
 TILE_COLS = 640
@@ -40,8 +40,6 @@ OUT_COLS = 500
 OVERLAP = 140
 
 NBANDS_ORIGINAL = 7
-
-BATCH_SIZE = 16
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
 
@@ -75,11 +73,11 @@ def argparse_init():
     return p
 
 
-def load_model(checkpoint_path):
+def load_model(checkpoint_path, crs):
     """Load the model weights from checkpoint"""
-    model = ResModel.load_from_checkpoint(
-        checkpoint_path, in_channels=len(BAND_SELECTION), out_classes=1, arch='MAnet',
-        encoder_name='resnet34', map_location=torch.device('cpu'))
+    model = ResModelMAnet.load_from_checkpoint(
+        checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
+        encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs)
     return model
 
 
@@ -144,9 +142,9 @@ def geofilter_indices(src_transform, start_ind, region_gpd):
             f.write("{},{}\n".format(ind[0], ind[1]))
 
     # Write out geopandas shapes
-    cp_gdf_invalid = cp_gdf[~cp_gdf['i'].isin(cp_gdf_filt['i'])]
-    cp_gdf_invalid.to_file('./gpd_invalid.geojson', driver='GeoJSON')
-    cp_gdf_filt.to_file('./gpd_valid.geojson', driver='GeoJSON')
+#    cp_gdf_invalid = cp_gdf[~cp_gdf['i'].isin(cp_gdf_filt['i'])]
+#    cp_gdf_invalid.to_file('./gpd_invalid.geojson', driver='GeoJSON')
+#    cp_gdf_filt.to_file('./gpd_valid.geojson', driver='GeoJSON')
 
     return start_ind[cp_gdf_filt['i']]
 
@@ -210,11 +208,13 @@ def main():
     mean_std = np.load(args.mean_std_file)
 
     # Load model
-    model = load_model(args.model_checkpoint)
+    model = load_model(args.model_checkpoint, crs=src_list[0].crs)
 
     # Create dataset and loader
-    ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax)
-    dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1)
+    ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
+                    band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
+                    overlap=OVERLAP, out_dir=args.out_dir)
+    dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 
     trainer = pl.Trainer()
     with torch.no_grad():

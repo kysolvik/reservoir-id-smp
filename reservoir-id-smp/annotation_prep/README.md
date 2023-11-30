@@ -39,6 +39,8 @@ python3 match_tiles.py ./out/s2_10m/grid_indices.csv s2_20m.vrt ./out/s2_20m/ s2
 ```
 
 ### D. Upload files to google cloud storage for labelbox
+
+*Note: Labelbox has changed its import formats. It no longer accepts csvs, instead they have to be in a json. This script outputs a csv that contains the necessary "row_data" field that you need. See here for more information: https://docs.labelbox.com/reference/image*
 ```
 bash prep_labelbox_csv.sh gs://res-id/labelbox_tiles/sentinel_batch1/ ./out/s2_10m/
 ```

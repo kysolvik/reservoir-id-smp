@@ -19,7 +19,7 @@ import argparse
 import numpy as np
 import pandas as pd
 from skimage import io
-from osgeo import gdal
+import rasterio
 
 
 # Set seed
@@ -99,8 +99,8 @@ def create_gmaps_link(xmin_pix, ymin_pix, xmax_pix, ymax_pix, gt):
     ymean_pix = (ymin_pix + ymax_pix)/2
 
     # Longitude, latitude of center
-    center_coords = np.stack((gt[0] + xmean_pix*gt[2]+(ymean_pix*gt[1]),
-                             gt[3] + xmean_pix*gt[5]+(ymean_pix*gt[4])),
+    center_coords = np.stack((gt[2] + xmean_pix*gt[1]+(ymean_pix*gt[0]),
+                             gt[5] + xmean_pix*gt[4]+(ymean_pix*gt[3])),
                              axis=1)
 
     gmaps_links = ["https://www.google.com/maps/@{},{},5000m/data=!3m1!1e3"\
@@ -109,14 +109,14 @@ def create_gmaps_link(xmin_pix, ymin_pix, xmax_pix, ymax_pix, gt):
     return gmaps_links
 
 
-def subset_image(og_im, num_subsets, dim_x, dim_y, pad_x, pad_y,
+def subset_image(fh, num_subsets, dim_x, dim_y, pad_x, pad_y,
                  out_dir, source_path, out_prefix, nodata=0):
     """Create num_subsets images of (dim_x, dim_y) size from og_im."""
 
     # Randomly select locations for sub-arrays
-    sub_xmins = np.random.random_integers(0, og_im.shape[0] - (dim_x + 2*pad_x + 1),
+    sub_xmins = np.random.random_integers(0, fh.shape[0] - (dim_x + 2*pad_x + 1),
                                           num_subsets)
-    sub_ymins = np.random.random_integers(0, og_im.shape[1] - (dim_y + 2*pad_y + 1),
+    sub_ymins = np.random.random_integers(0, fh.shape[1] - (dim_y + 2*pad_y + 1),
                                           num_subsets)
 
     # Get xmaxs and ymaxs
@@ -124,7 +124,7 @@ def subset_image(og_im, num_subsets, dim_x, dim_y, pad_x, pad_y,
     sub_ymaxs = sub_ymins + dim_y + 2*pad_y
 
     # Geotransformation
-    source_geotrans = gdal.Open(source_path).GetGeoTransform()
+    source_geotrans = fh.transform
 
     # Get Google maps link
     sub_gmaps_links = create_gmaps_link(sub_xmins, sub_ymins, sub_xmaxs,
@@ -147,13 +147,16 @@ def subset_image(og_im, num_subsets, dim_x, dim_y, pad_x, pad_y,
     for snum in range(0, num_subsets):
         # NDWI image, for annotating
         subset_ndwi_path = '{}/{}{}_ndwi.png'.format(out_dir, out_prefix, snum)
-        sub_ndwi_im = og_im[sub_xmins[snum]:sub_xmaxs[snum],
-                            sub_ymins[snum]:sub_ymaxs[snum],
-                            :]
+
+        read_window = ((sub_xmins[snum], sub_xmaxs[snum]),
+                       (sub_ymins[snum], sub_ymaxs[snum]))
+        sub_ndwi_im = np.moveaxis(fh.read(window=read_window), 0, -1)
+
         # Check image for no data
         if np.any(sub_ndwi_im == nodata):
             null_im_mask[snum] = False
             continue
+
         # Save ndwi image for labelbox
         sub_ndwi_im = normalized_diff(
                 sub_ndwi_im[pad_x:-(pad_x), pad_y:-(pad_y), 1],
@@ -163,9 +166,8 @@ def subset_image(og_im, num_subsets, dim_x, dim_y, pad_x, pad_y,
 
         # Original image, for training
         subset_og_path = '{}/{}{}_og.tif'.format(out_dir, out_prefix, snum)
-        sub_og_im = og_im[sub_xmins[snum]:sub_xmaxs[snum],
-                          sub_ymins[snum]:sub_ymaxs[snum],
-                          :]
+        sub_og_im = np.moveaxis(fh.read(window=read_window), 0, -1)
+
         io.imsave(subset_og_path, sub_og_im, plugin='tifffile')
 
     # Write grid indices to csv
@@ -181,10 +183,10 @@ def main():
     args = parser.parse_args()
 
     # Read image
-    base_image = io.imread(args.source_path)
+    fh = rasterio.open(args.source_path)
 
     # Get subsets
-    subset_image(base_image, args.num_subsets,
+    subset_image(fh, args.num_subsets,
                  args.subset_dim_x, args.subset_dim_y,
                  args.padding_x, args.padding_y,
                  args.out_dir, args.source_path, args.out_prefix)

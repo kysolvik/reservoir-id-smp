@@ -124,21 +124,29 @@ def subset_image(fh, num_subsets, dim_x, dim_y, pad_x, pad_y,
     sub_ymaxs = sub_ymins + dim_y + 2*pad_y
 
     # Geotransformation
-    source_geotrans = fh.transform
+    gt = fh.transform
 
     # Get Google maps link
     sub_gmaps_links = create_gmaps_link(sub_xmins, sub_ymins, sub_xmaxs,
-                                        sub_ymaxs, source_geotrans)
+                                        sub_ymaxs, gt)
+
+    # xmin/maxs are flipped because they're rows starting from top of image
+    min_latlons = np.stack((gt[2] + sub_xmaxs*gt[1]+(sub_ymins*gt[0]),
+                            gt[5] + sub_xmaxs*gt[4]+(sub_ymins*gt[3])),
+                           axis=1)
+    max_latlons = np.stack((gt[2] + sub_xmins*gt[1]+(sub_ymaxs*gt[0]),
+                            gt[5] + sub_xmins*gt[4]+(sub_ymaxs*gt[3])),
+                           axis=1)
 
     # Create and save csv containing grid coordinates for images
     grid_indices_df = pd.DataFrame({
         'name': ['{}{}_ndwi'.format(out_prefix, snum)
                  for snum in range(0, num_subsets)],
         'source': os.path.basename(source_path),
-        'lon_min': sub_xmins,
-        'lon_max': sub_xmaxs,
-        'lat_min': sub_ymins,
-        'lat_max': sub_ymaxs,
+        'lon_min': min_latlons[:, 0],
+        'lon_max': max_latlons[:, 0],
+        'lat_min': min_latlons[:, 1],
+        'lat_max': max_latlons[:, 1],
         'gmaps_link': sub_gmaps_links
         })
 

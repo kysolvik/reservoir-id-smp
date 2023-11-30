@@ -3,6 +3,7 @@
 Extract arrays from new rasters that match previously extracted training tiles
 
 Example:
+    python3 match_tiles.py ./out/s2_20m/grid_indices.csv s2_20m.vrt ./out/s2_20m/ s2_20m
 
 
 """
@@ -10,7 +11,7 @@ Example:
 import argparse
 import pandas as pd
 import subprocess as sp
-from osgeo import gdal
+import rasterio
 import glob
 
 

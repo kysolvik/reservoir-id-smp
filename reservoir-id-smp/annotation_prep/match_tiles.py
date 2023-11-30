@@ -10,7 +10,7 @@ Example:
 import argparse
 import pandas as pd
 import subprocess as sp
-import gdal
+from osgeo import gdal
 import glob
 
 
@@ -27,8 +27,8 @@ def argparse_init():
     p.add_argument('grid_indices_latlon',
                    help='grid indices csv output by extract_tiles.py',
                    type=str)
-    p.add_argument('gcs_raster_dir',
-                   help='Google Cloud Storage path storing target rasters',
+    p.add_argument('target_raster',
+                   help='Target raster file to extract from (VRT or TIF)',
                    type=str)
     p.add_argument('output_dir',
                    help='Output directory.',
@@ -39,16 +39,16 @@ def argparse_init():
 
     return p
 
-def subset_target(target_vrt, output_file, subset_df_row):
+def subset_target(target_raster, output_file, subset_df_row):
     xmin = str(subset_df_row['lon_min'])
     xmax = str(subset_df_row['lon_max'])
     ymin = str(subset_df_row['lat_min'])
     ymax = str(subset_df_row['lat_max'])
     sp.call(['gdalwarp', '-tr', str(TARGET_RES), str(TARGET_RES),
              '-te', xmin, ymin, xmax, ymax, '-overwrite', '-co', 'COMPRESS=LZW',
-             target_vrt, output_file])
+             target_raster, output_file])
 
-    return target_vrt
+    return 
 
 
 def main():
@@ -63,26 +63,12 @@ def main():
     # Read in input dataframe
     grid_df = pd.read_csv(args.grid_indices_latlon)
 
-    # Mount GS Bucket
-    bucket_name = args.gcs_raster_dir.split('/')[2]
-    local_raster_dir = 'gcs_mount{}'.format(
-        args.gcs_raster_dir.split(bucket_name, maxsplit=1)[1])
-    sp.call(['gcsfuse', bucket_name, 'gcs_mount/'])
-
-    # Create target vrt
-    target_vrt = 'temp/target.vrt'
-    sp.call(['gdalbuildvrt', target_vrt] +
-            glob.glob('{}/*'.format(local_raster_dir)))
-
     # Create matching arrays
     for row_i in range(grid_df.shape[0]):
         cur_row = grid_df.loc[row_i]
         output_file = '{}/{}.tif'.format(args.output_dir, cur_row['name'].replace(
             'ndwi', args.output_suffix))
-        subset_target(target_vrt, output_file, cur_row)
-
-    sp.call(['sudo', 'umount', 'gcs_mount'])
-    sp.call(['rm', target_vrt])
+        subset_target(args.target_raster, output_file, cur_row)
 
     return
 

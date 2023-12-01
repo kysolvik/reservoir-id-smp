@@ -2,31 +2,50 @@
 
 For each stage, see the README inside the directory for more information.
 
-## 1 ./annotation_prep
+## 1. ./ee_export
 
-Code for extracting tiles from larger mosaic
+Readme includes a link to export script on Google Earth Engine
 
-- extract_tiles.py
+
+## 2 ./annotation_prep
+
+Code for extracting tiles from satellite mosaics for LabelBox annotation
+
+- A. build_input_vrt.sh
+
+- B. extract_tiles.py
 Extracts random tiles from mosaic. Can control size and count of tiles.
 
-
-- match_tiles.py
+- C. match_tiles.py
 Given directory of tiles from "extract_tiles.py", extract matching tiles from other mosaics.
 
+- D. prep_labelbox_csv.sh
 
-## 2 ./preprocessing
+
+## 3 ./preprocessing
+
+Code for preparing annotated images for training
 
 - prep_smp_dataset.ipynb
 Prepare dataset for training
 
-## 3 ./train
+
+## 4 ./train
+
+Includes notebook for training on Google Colab.
 
 - train_smp_segmentation_unet.ipynb
 Notebook for training. For running on Google Colab.
 
-## 4 ./predict
 
-- predict_smp.py
+## 5 ./predict
+
+Scripts for running prediction along with some helper modules
+
+- build_input_vrts_sentinel.sh
+Build full raster vrts for running predictions
+
+- predict_smp_sentinel.py
 Script for running prediction
 
 - models.py

@@ -5,12 +5,12 @@ Reservoir segmentation using Segmentation Models Pytorch
 
 For each stage, see the README inside the directory for more information.
 
-### 1. reservoir-id-smp/ee_export
+### 1 - reservoir-id-smp/ee_export
 
 Readme includes a link to export script on Google Earth Engine
 
 
-### 2 reservoir-id-smp/annotation_prep
+### 2 - reservoir-id-smp/annotation_prep
 
 Code for extracting tiles from satellite mosaics for LabelBox annotation
 
@@ -25,7 +25,7 @@ Given directory of tiles from "extract_tiles.py", extract matching tiles from ot
 - D. prep_labelbox_csv.sh
 
 
-### 3 reservoir-id-smp/preprocessing
+### 3 - reservoir-id-smp/preprocessing
 
 Code for preparing annotated images for training
 
@@ -33,7 +33,7 @@ Code for preparing annotated images for training
 Prepare dataset for training
 
 
-### 4 reservoir-id-smp/train
+### 4 - reservoir-id-smp/train
 
 Includes notebook for training on Google Colab.
 
@@ -41,7 +41,7 @@ Includes notebook for training on Google Colab.
 Notebook for training. For running on Google Colab.
 
 
-### 5 reservoir-id-smp/predict
+### 5 - reservoir-id-smp/predict
 
 Scripts for running prediction along with some helper modules
 

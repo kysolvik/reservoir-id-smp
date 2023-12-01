@@ -35,12 +35,12 @@ class ResModelMAnet(pl.LightningModule):
             new_dataset.write(pred.astype('uint8'), 1)
 
     def forward(self, image):
-        # normalize image here
         mask = self.model(image)[0]
         return self.crop_transform(mask)
 
     def shared_step(self, batch, stage):
         image = batch["image"]
+        print(image.shape)
 
         # Shape of the image should be (batch_size, num_channels, height, width)
         # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]

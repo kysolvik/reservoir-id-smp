@@ -39,19 +39,18 @@ OUT_COLS = 500
 
 OVERLAP = 140
 
-NBANDS_ORIGINAL = 7
+NBANDS_ORIGINAL = 12
 
-BAND_SELECTION = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-
+BAND_SELECTION = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15]
 
 def argparse_init():
     """Prepare ArgumentParser for inputs"""
 
     p = argparse.ArgumentParser(
-            description='Predict reservoirs from vrt of landsat',
+            description='Predict reservoirs from vrt of Sentinel',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     p.add_argument('source_path',
-                   help='Path to main ls8 vrt',
+                   help='Path to main sentinel2 10m vrt',
                    type=str)
     p.add_argument('model_checkpoint',
                    help='Pytorch Lightning model checkpoint file',
@@ -83,12 +82,13 @@ def load_model(checkpoint_path, crs):
 
 def open_sources(source_path):
     """Open rasterio objects for all the source images.
-
-    Note:
-        For Landsat, only one source image
     """
+    s1_10m_path = source_path.replace('s2_10m', 's1_10m')
+    s2_20m_path = source_path.replace('s2_10m', 's2_20m')
     src_list = [
-        rasterio.open(source_path)]
+        rasterio.open(source_path),
+        rasterio.open(s1_10m_path),
+        rasterio.open(s2_20m_path)]
 
     return src_list
 
@@ -211,7 +211,7 @@ def main():
     model = load_model(args.model_checkpoint, crs=src_list[0].crs)
 
     # Create dataset and loader
-    ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
+    ds = ResDataset(start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
                     band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
                     overlap=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)

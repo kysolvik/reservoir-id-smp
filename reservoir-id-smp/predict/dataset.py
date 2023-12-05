@@ -12,7 +12,7 @@ class ResDataset(BaseDataset):
     """CamVid Dataset. Read images, apply augmentation and preprocessing transformations.
 
     Args:
-        fhs (rasterio filehandles):
+        fh (rasterio filehandle):
         augmentation (albumentations.Compose): data transfromation pipeline 
             (e.g. flip, scale, etc.)
 
@@ -22,7 +22,7 @@ class ResDataset(BaseDataset):
     def __init__(
             self,
             start_inds,
-            fhs,
+            fh,
             bands_minmax,
             band_selection,
             tile_rows,
@@ -33,14 +33,14 @@ class ResDataset(BaseDataset):
     ):
         self.ids = np.arange(start_inds.shape[0])
         self.start_inds = start_inds
-        self.fhs= fhs
+        self.fh = fh
         self.band_selection = band_selection
         self.overlap = overlap
         self.tile_rows = tile_rows
         self.tile_cols = tile_cols
         self.out_dir = out_dir
         self.bands_minmax = bands_minmax
-        self.src_transform = self.fhs[0].transform
+        self.src_transform = self.fh.transform
         self.preprocessing_to_tensor = self.get_preprocessing_to_tensor()
         self.mean_std = mean_std
 
@@ -109,6 +109,8 @@ class ResDataset(BaseDataset):
         outfile = '{}/pred_{}-{}.tif'.format(
                 self.out_dir, self.start_inds[i, 0], self.start_inds[i, 1])
 
+
+
         return {'image': image,
                 'geo_transform': geo_transform,
                 'outfile': outfile,
@@ -161,16 +163,17 @@ class ResDataset(BaseDataset):
             print('Error: overflow')
         return img.astype(np.uint8)
 
+#    def normalize_image(self, ar, mean_std):
+#        return (ar - mean_std[0])/mean_std[1]
+
     def preprocess(self, img, bands_minmax, mean_std, band_selection):
         """Prep the input images"""
         img = self.rescale_to_minmax_uint8(img, bands_minmax)
         nds = self.calc_all_nds(img)
         img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
         img = (img - mean_std[0])/mean_std[1]
-
-#         # IMPORTANT: Remove first band (changes between landsat generations)
-#         if img.shape[2] == 11:
-#             img = img[:,:,1:]    
+        # IMPORTANT: Remove first band (changes between landsat generations)
+        img = img[:,:,:6]
 
         return img
 
@@ -187,8 +190,6 @@ class ResDataset(BaseDataset):
         """Load single tile from list of src"""
         row, col = start_inds[0], start_inds[1]
 
-        og_img_list = [f.read(window=((row, row + self.tile_rows),
-                                      (col, col + self.tile_cols))) for f in self.fhs]
-        
-        return np.moveaxis(np.vstack(og_img_list), 0, -1)
-
+        base_img = self.fh.read(window=((row, row + self.tile_rows),
+                                        (col, col + self.tile_cols)))
+        return np.moveaxis(base_img, 0, 2)

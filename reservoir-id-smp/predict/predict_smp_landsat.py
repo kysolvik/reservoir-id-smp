@@ -27,9 +27,10 @@ import affine
 import torch
 import segmentation_models_pytorch as smp
 import torchvision
+from neural_compressor.utils.pytorch import load
 
 from dataset import ResDataset
-from model import ResModelMAnet
+from model import ResModel
 
 TILE_ROWS = 640
 TILE_COLS = 640
@@ -66,6 +67,10 @@ def argparse_init():
                    help='Shapefile to predict within. Skips tiles outside',
                    type=str,
                    default=None)
+    p.add_argument('--quantized',
+                   help='Provide if providing quantized model .pt file.',
+                   action='store_true',
+                   default=False)
     p.add_argument('out_dir',
                    help='Output directory for predicted subsets',
                    type=str)
@@ -75,9 +80,16 @@ def argparse_init():
 
 def load_model(checkpoint_path, crs):
     """Load the model weights from checkpoint"""
-    model = ResModelMAnet.load_from_checkpoint(
-        checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
+    model = ResModel.load_from_checkpoint(
+        checkpoint_path, in_channels=6, out_classes=1, arch='MAnet',
         encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs)
+    return model
+
+def load_model_quantized(checkpoint_path, crs):
+    """Load the model weights from checkpoint"""
+    model = ResModel(arch='MAnet', encoder_name="resnet34",
+                     in_channels=6, out_classes=1, weights=None)
+    model.model = nc_load(checkpoint_path, model.model)
     return model
 
 
@@ -208,10 +220,13 @@ def main():
     mean_std = np.load(args.mean_std_file)
 
     # Load model
-    model = load_model(args.model_checkpoint, crs=src_list[0].crs)
+    if args.quantized:
+        model = load_model_quantized(args.model_checkpoint, crs=src_list[0].crs)
+    else:
+        model = load_model(args.model_checkpoint, crs=src_list[0].crs)
 
     # Create dataset and loader
-    ds = ResDataset(start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
+    ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
                     band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
                     overlap=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)

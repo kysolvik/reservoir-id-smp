@@ -29,6 +29,7 @@ class ResDataset(BaseDataset):
             tile_cols,
             overlap,
             out_dir,
+            add_nds,
             mean_std=None,
     ):
         self.ids = np.arange(start_inds.shape[0])
@@ -43,6 +44,7 @@ class ResDataset(BaseDataset):
         self.src_transform = self.fh.transform
         self.preprocessing_to_tensor = self.get_preprocessing_to_tensor()
         self.mean_std = mean_std
+        self.add_nds = add_nds
 
 
     def to_tensor(self, x, **kwargs):
@@ -169,11 +171,12 @@ class ResDataset(BaseDataset):
     def preprocess(self, img, bands_minmax, mean_std, band_selection):
         """Prep the input images"""
         img = self.rescale_to_minmax_uint8(img, bands_minmax)
-        nds = self.calc_all_nds(img)
-        img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
-        img = (img - mean_std[0])/mean_std[1]
-        # IMPORTANT: Remove first band (changes between landsat generations)
-        img = img[:,:,:6]
+        if self.add_nds:
+            nds = self.calc_all_nds(img)
+            img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
+        else:
+            img = img[:,:, band_selection]
+        img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
 
         return img
 

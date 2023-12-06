@@ -27,8 +27,7 @@ import affine
 import torch
 import segmentation_models_pytorch as smp
 import torchvision
-from neural_compressor.utils.pytorch import load
-
+from neural_compressor.utils.pytorch import load as nc_load
 from dataset import ResDataset
 from model import ResModel
 
@@ -42,7 +41,7 @@ OVERLAP = 140
 
 NBANDS_ORIGINAL = 7
 
-BAND_SELECTION = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+BAND_SELECTION = [1, 2, 3, 4, 5, 6]
 
 
 def argparse_init():
@@ -71,6 +70,10 @@ def argparse_init():
                    help='Provide if providing quantized model .pt file.',
                    action='store_true',
                    default=False)
+    p.add_argument('--calc_nds',
+                   help='Calculate 4 normalized difference bands.',
+                   action='store_true',
+                   default=False)
     p.add_argument('out_dir',
                    help='Output directory for predicted subsets',
                    type=str)
@@ -88,7 +91,7 @@ def load_model(checkpoint_path, crs):
 def load_model_quantized(checkpoint_path, crs):
     """Load the model weights from checkpoint"""
     model = ResModel(arch='MAnet', encoder_name="resnet34",
-                     in_channels=6, out_classes=1, weights=None)
+                     in_channels=6, out_classes=1, weights=None, crs=crs)
     model.model = nc_load(checkpoint_path, model.model)
     return model
 
@@ -224,10 +227,11 @@ def main():
         model = load_model_quantized(args.model_checkpoint, crs=src_list[0].crs)
     else:
         model = load_model(args.model_checkpoint, crs=src_list[0].crs)
+    model.model.eval()
 
     # Create dataset and loader
     ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
-                    band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
+                    band_selection=BAND_SELECTION, add_nds=args.calc_nds, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
                     overlap=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 

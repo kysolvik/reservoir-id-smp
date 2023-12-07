@@ -39,10 +39,9 @@ OUT_COLS = 500
 
 OVERLAP = 140
 
-NBANDS_ORIGINAL = 7
+BAND_SELECTION = [0, 1, 2, 3, 4, 5]
 
-BAND_SELECTION = [1, 2, 3, 4, 5, 6]
-
+MEAN_STD_BAND_SELECTION = [1, 2, 3, 4, 5, 6]
 
 def argparse_init():
     """Prepare ArgumentParser for inputs"""
@@ -220,7 +219,8 @@ def main():
     bands_minmax_all = np.load(args.bands_minmax_file)
     bands_minmax = np.array([np.min(bands_minmax_all[0], axis=0),
                              np.percentile(bands_minmax_all[1], 80, axis=0)])
-    mean_std = np.load(args.mean_std_file)
+    bands_minmax = bands_minmax[:, MEAN_STD_BAND_SELECTION]
+    mean_std = np.load(args.mean_std_file)[:, MEAN_STD_BAND_SELECTION]
 
     # Load model
     if args.quantized:

@@ -41,7 +41,8 @@ OVERLAP = 140
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5]
 
-MEAN_STD_BAND_SELECTION = [1, 2, 3, 4, 5, 6]
+# NOTE: For LS8 should be 1-6. For LS7 and 5 should be 0-5
+MEAN_STD_BAND_SELECTION = [0, 1, 2, 3, 4, 5]
 
 def argparse_init():
     """Prepare ArgumentParser for inputs"""

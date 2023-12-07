@@ -221,7 +221,9 @@ def main():
     bands_minmax = np.array([np.min(bands_minmax_all[0], axis=0),
                              np.percentile(bands_minmax_all[1], 80, axis=0)])
     bands_minmax = bands_minmax[:, MEAN_STD_BAND_SELECTION]
+    print(bands_minmax.shape)
     mean_std = np.load(args.mean_std_file)[:, MEAN_STD_BAND_SELECTION]
+    print(mean_std.shape)
 
     # Load model
     if args.quantized:

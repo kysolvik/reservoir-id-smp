@@ -105,7 +105,7 @@ class ResDataset(BaseDataset):
             image = sample['image']
 
         # Get geo transform information
-        geo_transform = self.get_geotransform((self.start_inds[i,1], self.start_inds[i,0]))
+        geo_transform = self.get_geotransform((self.start_inds[i,0], self.start_inds[i,1]))
 
         # Get output filename
         outfile = '{}/pred_{}-{}.tif'.format(
@@ -191,7 +191,7 @@ class ResDataset(BaseDataset):
 
     def load_single_image(self, start_inds):
         """Load single tile from list of src"""
-        row, col = start_inds[0], start_inds[1]
+        col, row = start_inds[0], start_inds[1]
 
         base_img = self.fh.read(window=((row, row + self.tile_rows),
                                         (col, col + self.tile_cols)))

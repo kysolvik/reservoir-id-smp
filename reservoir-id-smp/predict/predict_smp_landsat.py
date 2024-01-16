@@ -180,6 +180,11 @@ def get_indices(src, done_ind, region_gpd=None):
     start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
     print('Num of tiles before any filter:', start_ind.shape[0])
 
+    # Filter to region
+    if region_gpd is not None:
+        start_ind = geofilter_indices(src.transform, start_ind, region_gpd)
+        print('Num of tiles after geofilter:', start_ind.shape[0])
+
     # Eliminate already predicted indices
     if done_ind.shape[0] > 0:
         print(start_ind.flags['F_CONTIGUOUS'])
@@ -188,11 +193,6 @@ def get_indices(src, done_ind, region_gpd=None):
                                 done_ind.astype('int64').view('int64, int64'))
         start_ind = start_ind[~start_in_done]
     print('Num of tiles after done_ind removed:', start_ind.shape[0])
-
-    # Filter to region
-    if region_gpd is not None:
-        start_ind = geofilter_indices(src.transform, start_ind, region_gpd)
-        print('Num of tiles after geofilter:', start_ind.shape[0])
 
     return start_ind
 

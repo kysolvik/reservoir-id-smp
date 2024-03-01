@@ -4,7 +4,7 @@
 from osgeo import gdal
 import numpy as np
 import sys
-from scipy import ndimage
+from scipy import ndimage, stats
 
 tif = sys.argv[1]
 region_tif = sys.argv[2]
@@ -14,18 +14,25 @@ box_size = 200000
 fh = gdal.Open(tif)
 region_fh = gdal.Open(region_tif) 
 
+def calc_mode(vals):
+    mode_result = stats.mode(vals)
+    return mode_result.mode
 
-def get_count(ar):
+def get_count(ar, region_ar):
     mask = ar == 1
     # Get count
     label_im, nb_labels = ndimage.label(mask,
                                     structure = [[1,1,1],[1,1,1],[1,1,1]])
+    label_values = np.arange(1, nb_labels + 1)
     print('Count done')
 
-    # Region props
-    sizes = ndimage.sum(mask, label_im, range(nb_labels + 1))
-    print('Reg Props done')
-    return sizes
+    # Get sizes
+    sizes = ndimage.labeled_comprehension(mask, label_im, label_values, np.sum, int, 0)
+
+    # Attribute to region
+    regions = ndimage.labeled_comprehension(region_ar, label_im, label_values, calc_mode, int, 0)
+    print('Object Props done')
+    return sizes, regions
 
 total_rows, total_cols = fh.RasterYSize, fh.RasterXSize
 current_row = 0
@@ -37,7 +44,7 @@ col_starts = np.arange(0, total_cols, box_size)
 start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
 
 with open(out_txt, 'w') as f:
-    f.write('reg,area\n')
+    f.write('area,reg\n')
 for i in range(start_ind.shape[0]):
     # For the indices near edge we need to use a smaller box size
     box_size_rows = min(total_rows - start_ind[i,0], box_size)
@@ -48,12 +55,8 @@ for i in range(start_ind.shape[0]):
     reg_ar = region_fh.GetRasterBand(1).ReadAsArray(
         int(start_ind[i, 1]), int(start_ind[i,0]),
         int(box_size_cols),int(box_size_rows))
-    for reg_num in np.unique(reg_ar):
-        if reg_num==255:
-            continue
-        ar_cur_reg = ar.copy() 
-        ar_cur_reg[reg_ar!=reg_num] = 0
-        sizes = get_count(ar_cur_reg)
+    if (ar==1).sum() > 0 and (reg_ar!=255).sum() > 0:
+        sizes, regions = get_count(ar, reg_ar)
         with open(out_txt, 'a') as f:
-            for item in sizes:
-                f.write("{},{}\n".format(int(reg_num), int(item)))
+            for i in range(len(sizes)):
+                f.write("{},{}\n".format(int(sizes[i]), regions[i]))

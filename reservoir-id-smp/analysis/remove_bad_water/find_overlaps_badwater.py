@@ -5,6 +5,7 @@ from osgeo import gdal
 import numpy as np
 import sys
 from scipy import ndimage, stats
+import cv2
 # Contains a simple array for calculating overlapping borders
 from _border_ar import calc_border_ar
 
@@ -19,6 +20,23 @@ hydropoly_fh = gdal.Open(hydropoly_tif)
 
 def calc_minmax(ar):
     return [np.min(ar), np.max(ar)]
+
+# def calc_cim(ar):
+#     print(ar)
+#     contours, heirarchy = cv2.findContours(ar, 1, 2)
+#     M = cv2.moments(contours)
+#     print(M)
+# 
+#     return [M['m10']/M['m00'], M['m01']/M['m00']]
+
+def create_cim_func(box_width):
+
+    def calc_cim(ar, pos):
+        pos_row, pos_col = np.divmod(pos, box_width)
+
+        return [np.mean(pos_row), np.mean(pos_col)]
+
+    return calc_cim
 
 def get_labels_count(start_ind_col, start_ind_row,
                      box_size_cols, box_size_rows):
@@ -40,8 +58,15 @@ def get_labels_count(start_ind_col, start_ind_row,
         return [0], [0], [0]
 
 def get_border_minmax(label_im, label_values, border_ar):
-    border_vals = ndimage.labeled_comprehension(border_ar, label_im, label_values, 
-                                                calc_minmax, np.ndarray, [0])
+#     border_vals = ndimage.labeled_comprehension(border_ar, label_im, label_values, 
+#                                                 calc_minmax, np.ndarray, [0])
+    border_vals = ndimage.labeled_comprehension(
+            border_ar,
+            label_im,
+            label_values,
+            np.unique,
+            np.ndarray,
+            [0])
 
     return border_vals
 
@@ -50,7 +75,16 @@ def get_hydropoly_val(label_im, label_values, hydropoly_ar):
     return hydropoly_max
 
 def get_centers(label_im, label_values):
-    centers = ndimage.center_of_mass(label_im>0, label_im, label_values)
+    box_height = label_im.shape[0]
+    calc_cim_func = create_cim_func(box_height)
+    centers = ndimage.labeled_comprehension(
+            label_im>0,
+            label_im,
+            label_values,
+            calc_cim_func,
+            np.ndarray,
+            [0],
+            pass_positions=True)
     return centers
 
 
@@ -64,8 +98,8 @@ col_starts = np.arange(0, total_cols, box_size)
 start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
 
 with open(out_txt, 'w') as f:
-    f.write('id,row_start,col_start,box_size_rows,box_size_cols,area,border_minmax,hydropoly,centers\n')
-for i in range(start_ind.shape[0]):
+    f.write('id,row_start,col_start,box_rows,box_cols,area,hydropoly,center_x,center_y,border_vals\n')
+for i in range(10): #start_ind.shape[0]):
     # For the indices near edge we need to use a smaller box size
     box_size_rows = min(total_rows - start_ind[i,0], box_size)
     box_size_cols = min(total_cols - start_ind[i,1], box_size)
@@ -87,15 +121,16 @@ for i in range(start_ind.shape[0]):
 
         with open(out_txt, 'a') as f:
             for i in range(len(sizes)):
-                f.write("{},{},{},{},{},{},{},{},{}\n".format(
+                f.write("{},{},{},{},{},{},{},{},{},'{}'\n".format(
                     label_values[i],
                     start_ind_row,
                     start_ind_col,
                     box_size_rows,
                     box_size_cols,
                     int(sizes[i]),
-                    border_vals[i],
                     hydropoly_vals[i],
-                    centers_of_mass[i]
+                    centers_of_mass[i][0],
+                    centers_of_mass[i][1],
+                    border_vals[i],
                     )
                     )

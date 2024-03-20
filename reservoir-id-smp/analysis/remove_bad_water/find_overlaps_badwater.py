@@ -17,26 +17,14 @@ box_size = 20000
 fh = gdal.Open(tif)
 hydropoly_fh = gdal.Open(hydropoly_tif)
 
+def create_com_func(box_width):
 
-def calc_minmax(ar):
-    return [np.min(ar), np.max(ar)]
-
-# def calc_cim(ar):
-#     print(ar)
-#     contours, heirarchy = cv2.findContours(ar, 1, 2)
-#     M = cv2.moments(contours)
-#     print(M)
-# 
-#     return [M['m10']/M['m00'], M['m01']/M['m00']]
-
-def create_cim_func(box_width):
-
-    def calc_cim(ar, pos):
+    def calc_com(ar, pos):
         pos_row, pos_col = np.divmod(pos, box_width)
 
         return [np.mean(pos_row), np.mean(pos_col)]
 
-    return calc_cim
+    return calc_com
 
 def get_labels_count(start_ind_col, start_ind_row,
                      box_size_cols, box_size_rows):
@@ -58,8 +46,6 @@ def get_labels_count(start_ind_col, start_ind_row,
         return [0], [0], [0]
 
 def get_border_minmax(label_im, label_values, border_ar):
-#     border_vals = ndimage.labeled_comprehension(border_ar, label_im, label_values, 
-#                                                 calc_minmax, np.ndarray, [0])
     border_vals = ndimage.labeled_comprehension(
             border_ar,
             label_im,
@@ -75,13 +61,13 @@ def get_hydropoly_val(label_im, label_values, hydropoly_ar):
     return hydropoly_max
 
 def get_centers(label_im, label_values):
-    box_height = label_im.shape[0]
-    calc_cim_func = create_cim_func(box_height)
+    box_width = label_im.shape[1]
+    calc_com_func = create_com_func(box_width)
     centers = ndimage.labeled_comprehension(
             label_im>0,
             label_im,
             label_values,
-            calc_cim_func,
+            calc_com_func,
             np.ndarray,
             [0],
             pass_positions=True)
@@ -99,7 +85,7 @@ start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
 
 with open(out_txt, 'w') as f:
     f.write('id,row_start,col_start,box_rows,box_cols,area,hydropoly,center_x,center_y,border_vals\n')
-for i in range(10): #start_ind.shape[0]):
+for i in start_ind.shape[0]):
     # For the indices near edge we need to use a smaller box size
     box_size_rows = min(total_rows - start_ind[i,0], box_size)
     box_size_cols = min(total_cols - start_ind[i,1], box_size)

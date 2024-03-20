@@ -12,7 +12,7 @@ from _border_ar import calc_border_ar
 tif = sys.argv[1]
 hydropoly_tif = sys.argv[2]
 out_txt = sys.argv[3]
-box_size = 40000
+box_size = 25000
 
 fh = gdal.Open(tif)
 hydropoly_fh = gdal.Open(hydropoly_tif)

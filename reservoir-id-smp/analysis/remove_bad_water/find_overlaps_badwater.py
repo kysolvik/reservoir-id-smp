@@ -12,7 +12,7 @@ from _border_ar import calc_border_ar
 tif = sys.argv[1]
 hydropoly_tif = sys.argv[2]
 out_txt = sys.argv[3]
-box_size = 20000
+box_size = 40000
 
 fh = gdal.Open(tif)
 hydropoly_fh = gdal.Open(hydropoly_tif)
@@ -85,7 +85,7 @@ start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
 
 with open(out_txt, 'w') as f:
     f.write('id,row_start,col_start,box_rows,box_cols,area,hydropoly,center_x,center_y,border_vals\n')
-for i in start_ind.shape[0]):
+for i in range(start_ind.shape[0]):
     # For the indices near edge we need to use a smaller box size
     box_size_rows = min(total_rows - start_ind[i,0], box_size)
     box_size_cols = min(total_cols - start_ind[i,1], box_size)

@@ -1,17 +1,19 @@
 #!/usr/bin/env python3
-""" Quick script to get counts and distribution of reservoir areas'"""
+""" Quick script to find reservoirs that overlap hydropolies layer or border"""
 
 from osgeo import gdal
 import numpy as np
 import sys
 from scipy import ndimage, stats
 import cv2
+import pandas as pd
+import os
 # Contains a simple array for calculating overlapping borders
 from _border_ar import calc_border_ar
 
 tif = sys.argv[1]
 hydropoly_tif = sys.argv[2]
-out_txt = sys.argv[3]
+out_csv = sys.argv[3]
 box_size = 25000
 
 fh = gdal.Open(tif)
@@ -22,7 +24,7 @@ def create_com_func(box_width):
     def calc_com(ar, pos):
         pos_row, pos_col = np.divmod(pos, box_width)
 
-        return [np.mean(pos_row), np.mean(pos_col)]
+        return np.array([np.mean(pos_row), np.mean(pos_col)])
 
     return calc_com
 
@@ -71,7 +73,7 @@ def get_centers(label_im, label_values):
             np.ndarray,
             [0],
             pass_positions=True)
-    return centers
+    return np.vstack(centers)
 
 
 total_rows, total_cols = fh.RasterYSize, fh.RasterXSize
@@ -83,8 +85,6 @@ col_starts = np.arange(0, total_cols, box_size)
 # Create Nx2 array with row/col start indices
 start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
 
-with open(out_txt, 'w') as f:
-    f.write('id,row_start,col_start,box_rows,box_cols,area,hydropoly,center_x,center_y,border_vals\n')
 for i in range(start_ind.shape[0]):
     # For the indices near edge we need to use a smaller box size
     box_size_rows = min(total_rows - start_ind[i,0], box_size)
@@ -105,18 +105,19 @@ for i in range(start_ind.shape[0]):
         hydropoly_vals = get_hydropoly_val(label_im, label_values, hydropoly_ar)
         print('Stats done')
 
-        with open(out_txt, 'a') as f:
-            for i in range(len(sizes)):
-                f.write("{},{},{},{},{},{},{},{},{},'{}'\n".format(
-                    label_values[i],
-                    start_ind_row,
-                    start_ind_col,
-                    box_size_rows,
-                    box_size_cols,
-                    int(sizes[i]),
-                    hydropoly_vals[i],
-                    centers_of_mass[i][0],
-                    centers_of_mass[i][1],
-                    border_vals[i],
-                    )
-                    )
+        out_dict = {
+                'id': label_values,
+                'row_start': start_ind_row,
+                'col_start': start_ind_col,
+                'box_rows': box_size_rows,
+                'box_cols': box_size_cols,
+                'area': sizes,
+                'hydropoly': hydropoly_vals,
+                'center_x': centers_of_mass[:, 0],
+                'center_y': centers_of_mass[:, 1],
+                'border_vals': border_vals
+                }
+
+        out_df = pd.DataFrame(out_dict)
+
+        out_df.to_csv(out_csv, mode='a', header=(not os.path.isfile(out_csv)))

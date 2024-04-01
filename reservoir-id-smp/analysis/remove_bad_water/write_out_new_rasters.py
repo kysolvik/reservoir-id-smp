@@ -18,25 +18,22 @@ from _border_ar import calc_border_ar
 
 tif = sys.argv[1]
 in_csv = sys.argv[2]
-out_dir = sys.argv[3]
+out_tif = sys.argv[3]
 box_size = 25000
 hydropoly_max_size = 50
 
 df = pd.read_csv(in_csv)
 fh = rio.open(tif)
+out_profile = fh.profile.copy()
+dst = rio.open(out_tif, 'w', **out_profile)
 
 
 # Set numpy print options so it doesn't abbreviate border array
 np.set_printoptions(threshold=4*box_size)
 
 
-def get_labels(start_ind_col, start_ind_row,
-               box_size_cols, box_size_rows):
-    mask = (fh.read(1,  
-                    window=Window(
-                        int(start_ind_col), int(start_ind_row),
-                        int(box_size_cols), int(box_size_rows))
-                    ) == 1)
+def get_labels(fh, read_window):
+    mask = fh.read(1, window=read_window) == 1
 
     if mask.sum() > 0:
         # Get count
@@ -45,9 +42,9 @@ def get_labels(start_ind_col, start_ind_row,
         label_values = np.arange(1, nb_labels + 1)
         print('Count done')
 
-        return label_im, label_values
+        return label_im, label_values, mask
     else:
-        return [0], [0]
+        return [0], [0], mask
 
 total_rows, total_cols = fh.height, fh.width
 current_row = 0
@@ -57,7 +54,6 @@ col_starts = np.arange(0, total_cols, box_size)
 
 # Create Nx2 array with row/col start indices
 start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
-# start_ind = np.array([[75000, 375000], [100000, 375000]])
 
 old_transform = fh.transform
 affine_transformer = rio.transform.AffineTransformer(old_transform)
@@ -69,30 +65,18 @@ for i in range(start_ind.shape[0]):
 
     # Get base counts and labeled image
     start_ind_col, start_ind_row = (start_ind[i,1], start_ind[i,0])
+    rw_window = Window(int(start_ind_col), int(start_ind_row),
+                       int(box_size_cols), int(box_size_rows))
     cur_df = df.loc[(df['row_start']==start_ind_row) &
                     (df['col_start']==start_ind_col) &
                     (df['hydropoly_max']<hydropoly_max_size)
                     ]
-    label_im, label_values = get_labels(
-            start_ind_col, start_ind_row, box_size_cols, box_size_rows)
+    label_im, label_values, mask = get_labels(fh, rw_window)
+    na_mask = mask == 255
 
     if np.max(label_values) > 0:
-        label_im[~np.isin(label_im, cur_df['id_in_tile'].values)] = 0
-
-        new_x, new_y = affine_transformer.xy(start_ind_row, start_ind_col)
-        new_transform = rio.transform.Affine(
-            a=old_transform.a,
-            b=old_transform.b,
-            c=new_x,
-            d=old_transform.d,
-            e=old_transform.e,
-            f=new_y)
-        out_tif = os.path.join(out_dir, '{}_{}_out.tif'.format(
-            start_ind_col, start_ind_row))
-        with rio.open(out_tif, 'w',
-                      driver='GTiff', width=box_size, height=box_size, count=1,
-                      dtype=rio.uint16, compress='lzw',
-                      crs=fh.crs, transform=new_transform) as dst:
-            dst.write(label_im, indexes=1)
+        mask[(~np.isin(label_im, cur_df['id_in_tile'].values))
+             * (~na_mask)] = 0
+    dst.write(mask, window=rw_window, indexes=1)
 
 

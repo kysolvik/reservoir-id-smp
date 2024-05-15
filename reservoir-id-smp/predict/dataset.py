@@ -6,6 +6,8 @@ from skimage import io
 import numpy as np
 import albumentations as albu
 import affine
+import time
+import rasterio
 
 
 class ResDataset(BaseDataset):
@@ -193,6 +195,12 @@ class ResDataset(BaseDataset):
         """Load single tile from list of src"""
         col, row = start_inds[0], start_inds[1]
 
-        base_img = self.fh.read(window=((row, row + self.tile_rows),
-                                        (col, col + self.tile_cols)))
+        # Try/except
+        try:
+            base_img = self.fh.read(window=((row, row + self.tile_rows),
+                                            (col, col + self.tile_cols)))
+        except: #rasterio.errors.RasterioIOError:
+            time.sleep(600)
+            base_img = self.fh.read(window=((row, row + self.tile_rows),
+                                            (col, col + self.tile_cols)))
         return np.moveaxis(base_img, 0, 2)

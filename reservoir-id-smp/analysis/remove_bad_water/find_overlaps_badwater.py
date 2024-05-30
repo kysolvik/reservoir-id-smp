@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """ Quick script to find reservoirs that overlap hydropolies layer or border"""
 
-from osgeo import gdal
 import rasterio as rio
 from rasterio.windows import Window
 import numpy as np

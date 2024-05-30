@@ -109,7 +109,7 @@ def compare_previous_year(label_im, label_values, last_label_im):
             [0])
     return previous_all
 
-total_rows, total_cols = fh.RasterYSize, fh.RasterXSize
+total_rows, total_cols = fh.height, fh.width
 current_row = 0
 current_col = 0
 row_starts = np.arange(0, total_rows, box_size)
@@ -169,7 +169,7 @@ for i in range(start_ind.shape[0]):
 
             print('Stats done')
 
-        if COMPARE_TO_PREVIOUS and write_labels:
+        if COMPARE_TO_PREVIOUS:
             out_dict = {
                     'id': label_values,
                     'label': label_values,
@@ -181,11 +181,11 @@ for i in range(start_ind.shape[0]):
                     'reg': regions,
                     'property_mode': property_mode,
                     'property_all': property_all,
-                    'previous_labels': previous_labels
+                    'previous_labels': previous_labels,
                     'center_col': centers_of_mass[:, 1],
                     'center_row': centers_of_mass[:, 0],
+                    'center_x': centers_x,
                     'center_y': centers_y,
-                    'center_x': centers_y,
                     }
         else:
             out_dict = {
@@ -201,11 +201,11 @@ for i in range(start_ind.shape[0]):
                     'property_all': property_all,
                     'center_col': centers_of_mass[:, 1],
                     'center_row': centers_of_mass[:, 0],
+                    'center_x': centers_x,
                     'center_y': centers_y,
-                    'center_x': centers_y,
                     }
-            out_df = pd.DataFrame(out_dict)
+        out_df = pd.DataFrame(out_dict)
 
-            out_df.to_csv(out_csv, mode='a',
-                          header=(not os.path.isfile(out_csv)),
-                          index=False)
+        out_df.to_csv(out_csv, mode='a',
+                      header=(not os.path.isfile(out_csv)),
+                      index=False)

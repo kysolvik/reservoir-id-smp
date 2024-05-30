@@ -26,13 +26,9 @@ df = pd.read_csv(in_csv)
 fh = rio.open(tif)
 out_profile = fh.profile.copy()
 
-# Set numpy print options so it doesn't abbreviate border array
-np.set_printoptions(threshold=4*box_size)
-
-
 def get_labels(fh, read_window):
     ar = fh.read(1, window=read_window)
-    mask = (ar == 1)
+    mask = (ar == 1).astype(np.uint8)
     na_mask = (ar == 255)
 
     if mask.sum() > 0:
@@ -88,7 +84,10 @@ for i in range(start_ind.shape[0]):
 
     if np.max(label_values) > 0:
         mask[~np.isin(label_im, cur_df['id_in_tile'].values)] = 0
+
+    # Setting NAs
     mask[na_mask] = 255
+
     out_tif = os.path.join(out_dir, '{}_{}_out.tif'.format(start_ind_col, start_ind_row))
     with rio.open(out_tif, 'w', **out_profile) as dst:
         dst.write(mask, indexes=1)

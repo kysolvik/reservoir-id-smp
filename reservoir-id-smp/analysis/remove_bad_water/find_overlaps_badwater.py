@@ -67,7 +67,6 @@ def get_border_minmax(label_im, label_values, border_ar):
 
 def get_hydropoly_val(label_im, label_values, hydropoly_ar):
     hydropoly_max = ndimage.labeled_comprehension(hydropoly_ar, label_im, label_values, np.max, int, 0)
-    print(hydropoly_max)
     return hydropoly_max
 
 def get_centers(label_im, label_values):
@@ -124,7 +123,6 @@ for i in range(start_ind.shape[0]):
                             int(start_ind_col), int(start_ind_row),
                             int(box_size_cols), int(box_size_rows)))
         hydropoly_vals = get_hydropoly_val(label_im, label_values, hydropoly_ar)
-        print(hydropoly_vals)
         print('Stats done')
 
         out_dict = {

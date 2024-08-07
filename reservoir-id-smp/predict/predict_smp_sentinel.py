@@ -29,7 +29,7 @@ import segmentation_models_pytorch as smp
 import torchvision
 
 from dataset import ResDataset
-from model import ResModelMAnet
+from model import ResModel
 
 TILE_ROWS = 640
 TILE_COLS = 640

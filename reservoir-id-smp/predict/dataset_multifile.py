@@ -132,14 +132,15 @@ class ResDatasetMultiFile(BaseDataset):
 
         nd_list =[]
 
+        # SENTINEL ND bands
         # Add  Gao NDWI
-        nd_list += [self.calc_nd(img, 4, 5)]
+        nd_list += [self.calc_nd(img, 3, 11)]
         # Add  MNDWI
-        nd_list += [self.calc_nd(img, 2, 5)]
+        nd_list += [self.calc_nd(img, 1, 11)]
         # Add McFeeters NDWI band
-        nd_list += [self.calc_nd(img, 2, 4)]
+        nd_list += [self.calc_nd(img, 1, 3)]
         # Add NDVI band
-        nd_list += [self.calc_nd(img, 4, 3)]
+        nd_list += [self.calc_nd(img, 3, 2)]
         
         return np.stack(nd_list, axis=2)
 

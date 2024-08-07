@@ -21,8 +21,9 @@ class ResModel(pl.LightningModule):
     def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
 
-        preds[preds >= 0.5] = 1
-        preds[preds < 0.5] = 0
+#         preds[preds >= 0.5] = 1
+#         preds[preds < 0.5] = 0
+        preds = np.round(preds*100).astype(np.uint8)
         for i in range(preds.shape[0]):
             new_dataset = rasterio.open(
                 outfile[i], 'w', driver='GTiff',

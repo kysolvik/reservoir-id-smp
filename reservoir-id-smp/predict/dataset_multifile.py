@@ -178,7 +178,11 @@ class ResDatasetMultiFile(BaseDataset):
             img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
         else:
             img = img[:,:, band_selection]
-        img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
+        # For sentinel, mean_std is already the same size
+        if mean_std.shape[1] == len(band_selection):
+            img = (img - mean_std[0])/mean_std[1]
+        else:
+            img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
 
         return img
 

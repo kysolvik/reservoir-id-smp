@@ -28,7 +28,7 @@ import torch
 import segmentation_models_pytorch as smp
 import torchvision
 
-from dataset import ResDataset
+from dataset_multifile import ResDatasetMultiFile
 from model import ResModel
 
 TILE_ROWS = 640
@@ -212,14 +212,16 @@ def main():
     model = load_model(args.model_checkpoint, crs=src_list[0].crs)
 
     # Create dataset and loader
-    ds = ResDataset(start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
-                    band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
-                    overlap=OVERLAP, out_dir=args.out_dir)
+    ds = ResDatasetMultiFile(
+            start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
+            band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
+            overlap=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 
     trainer = pl.Trainer()
     with torch.no_grad():
         trainer.predict(model, dl)
+
 
 if __name__ == '__main__':
     main()

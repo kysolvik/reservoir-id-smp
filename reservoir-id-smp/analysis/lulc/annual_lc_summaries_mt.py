@@ -9,8 +9,8 @@ import os
 import pandas as pd
 import numba as nb
 
-mb_in_dir = sys.argv[1]
-out_csv = sys.argv[2]
+mb_in_dir = sys.argv[1] # in/mato_grosso/aea/
+out_csv = sys.argv[2] # csvs/lulc_summary_mt.csv
 
 @nb.njit(parallel=True)
 def nb_isin_listcomp(matrix, index_to_remove):

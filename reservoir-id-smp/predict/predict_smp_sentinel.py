@@ -66,6 +66,10 @@ def argparse_init():
                    help='Shapefile to predict within. Skips tiles outside',
                    type=str,
                    default=None)
+    p.add_argument('--calc_nds',
+                   help='Calculate 4 normalized difference bands.',
+                   action='store_true',
+                   default=False)
     p.add_argument('out_dir',
                    help='Output directory for predicted subsets',
                    type=str)
@@ -214,7 +218,7 @@ def main():
     # Create dataset and loader
     ds = ResDatasetMultiFile(
             start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
-            band_selection=BAND_SELECTION, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
+            band_selection=BAND_SELECTION, add_nds=args.calc_nds, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
             overlap=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 

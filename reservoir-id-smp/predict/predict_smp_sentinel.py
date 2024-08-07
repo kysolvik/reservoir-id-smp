@@ -157,7 +157,7 @@ def geofilter_indices(src_transform, start_ind, region_gpd):
 def get_indices(src, done_ind, region_gpd=None):
     """Get the indices for the tiles in the larger vrt"""
 
-    total_rows, total_cols = src.height, src.width
+    total_cols, total_rows = src.height, src.width
 
     row_starts = np.arange(0, total_rows - TILE_ROWS, TILE_ROWS - OVERLAP)
     col_starts = np.arange(0, total_cols - TILE_COLS, TILE_COLS - OVERLAP)

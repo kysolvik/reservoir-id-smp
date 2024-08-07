@@ -69,5 +69,5 @@ class ResModel(pl.LightningModule):
     @torch.no_grad()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         preds = np.vstack(self(batch['image']).sigmoid())
-        self.write_imgs(preds, batch['outfile'], batch['geo_transform'])# , batch['crs'])
+        self.write_imgs(preds, batch['outfile'], batch['geo_transform'])
         return 

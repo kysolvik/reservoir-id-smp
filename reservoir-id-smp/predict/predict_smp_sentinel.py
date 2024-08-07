@@ -43,6 +43,7 @@ NBANDS_ORIGINAL = 12
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15]
 
+
 def argparse_init():
     """Prepare ArgumentParser for inputs"""
 
@@ -74,7 +75,7 @@ def argparse_init():
 
 def load_model(checkpoint_path, crs):
     """Load the model weights from checkpoint"""
-    model = ResModelMAnet.load_from_checkpoint(
+    model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
         encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs)
     return model

@@ -197,7 +197,7 @@ class ResDatasetMultiFile(BaseDataset):
 
     def load_single_image(self, start_inds):
         """Load single tile from list of src"""
-        row, col = start_inds[0], start_inds[1]
+        col, row = start_inds[0], start_inds[1]
 
         # Try/except
         try:

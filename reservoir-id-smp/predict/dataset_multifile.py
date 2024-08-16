@@ -134,9 +134,9 @@ class ResDatasetMultiFile(BaseDataset):
 
         # SENTINEL ND bands
         # Add  Gao NDWI
-        nd_list += [self.calc_nd(img, 3, 11)]
+        nd_list += [self.calc_nd(img, 3, 7)]
         # Add  MNDWI
-        nd_list += [self.calc_nd(img, 1, 11)]
+        nd_list += [self.calc_nd(img, 1, 7)]
         # Add McFeeters NDWI band
         nd_list += [self.calc_nd(img, 1, 3)]
         # Add NDVI band

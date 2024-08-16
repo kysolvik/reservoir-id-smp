@@ -39,9 +39,9 @@ OUT_COLS = 500
 
 OVERLAP = 140
 
-NBANDS_ORIGINAL = 12
-
-BAND_SELECTION = [0, 1, 2, 3, 4, 5, 12, 13, 14, 15]
+BAND_SELECTION = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
+# Only including 4 10m spectral, 2 SAR, and SwIR for v6
+BANDS_MINMAX_SELECTION = [0, 1, 2, 3, 4, 5, 10, 11]
 
 
 def argparse_init():
@@ -207,7 +207,7 @@ def main():
     start_inds = get_indices(src_list[0], done_ind, region_gpd)
 
     # Calculate mins and maxes for scaling bands
-    bands_minmax_all = np.load(args.bands_minmax_file)
+    bands_minmax_all = np.load(args.bands_minmax_file)[:, :, BANDS_MINMAX_SELECTION]
     bands_minmax = np.array([np.min(bands_minmax_all[0], axis=0),
                              np.percentile(bands_minmax_all[1], 80, axis=0)])
     mean_std = np.load(args.mean_std_file)

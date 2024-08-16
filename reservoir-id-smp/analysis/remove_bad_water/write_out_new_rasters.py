@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/=usr/bin/env python3
 """Using merged border dataframe, writes out new reservoir raster with hydropolies removed.
     Note: box_size MUST be the same as ./find_overlaps_badwater.py
 """
@@ -21,6 +21,7 @@ in_csv = sys.argv[2]
 out_dir = sys.argv[3]
 box_size = 25000
 hydropoly_max_size = 100
+prob=True
 
 df = pd.read_csv(in_csv)
 fh = rio.open(tif)
@@ -28,8 +29,11 @@ out_profile = fh.profile.copy()
 
 def get_labels(fh, read_window):
     ar = fh.read(1, window=read_window)
-    mask = (ar == 1).astype(np.uint8)
     na_mask = (ar == 255)
+    if prob:
+        mask = ((ar > 50)*(~na_mask)).astype(np.uint8)
+    else:
+        mask = (ar == 1).astype(np.uint8)
 
     if mask.sum() > 0:
         # Get count

@@ -18,6 +18,8 @@ hydropoly_tif = sys.argv[2]
 out_csv = sys.argv[3]
 box_size = 25000
 
+prob=True
+
 fh = rio.open(tif)
 hydropoly_fh = rio.open(hydropoly_tif)
 
@@ -36,11 +38,19 @@ def create_com_func(box_width):
 
 def get_labels_count(start_ind_col, start_ind_row,
                      box_size_cols, box_size_rows):
-    mask = (fh.read(1,
-                    window=Window(
-                        int(start_ind_col), int(start_ind_row),
-                        int(box_size_cols), int(box_size_rows))
-                    ) == 1)
+    if prob:
+        mask = fh.read(1,
+                        window=Window(
+                            int(start_ind_col), int(start_ind_row),
+                            int(box_size_cols), int(box_size_rows))
+                        )
+        mask = (mask > 50)*(mask!=255)
+    else:
+        mask = (fh.read(1,
+                        window=Window(
+                            int(start_ind_col), int(start_ind_row),
+                            int(box_size_cols), int(box_size_rows))
+                        ) == 1)
     if mask.sum() > 0:
         # Get count
         label_im, nb_labels = ndimage.label(mask,

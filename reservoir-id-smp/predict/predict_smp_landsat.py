@@ -41,10 +41,6 @@ OVERLAP = 140
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5]
 
-# NOTE: For LS8 should be 1-6. For LS7 and 5 should be 0-5
-# MEAN_STD_BAND_SELECTION = [0, 1, 2, 3, 4, 5]
-MEAN_STD_BAND_SELECTION = [1, 2, 3, 4, 5, 6]
-
 def argparse_init():
     """Prepare ArgumentParser for inputs"""
 
@@ -75,6 +71,10 @@ def argparse_init():
                    help='Calculate 4 normalized difference bands.',
                    action='store_true',
                    default=False)
+    p.add_argument('--threshold',
+                   help='Prediction threshold for binary class (0.0 - 1.0)',
+                   default=0.5,
+                   type=float)
     p.add_argument('out_dir',
                    help='Output directory for predicted subsets',
                    type=str)
@@ -221,10 +221,8 @@ def main():
     bands_minmax_all = np.load(args.bands_minmax_file)
     bands_minmax = np.array([np.min(bands_minmax_all[0], axis=0),
                              np.percentile(bands_minmax_all[1], 80, axis=0)])
-    bands_minmax = bands_minmax[:, MEAN_STD_BAND_SELECTION]
-    print(bands_minmax.shape)
-    mean_std = np.load(args.mean_std_file)[:, MEAN_STD_BAND_SELECTION]
-    print(mean_std.shape)
+    bands_minmax = bands_minmax[:, BAND_SELECTION]
+    mean_std = np.load(args.mean_std_file)[:, BAND_SELECTION]
 
     # Load model
     if args.quantized:

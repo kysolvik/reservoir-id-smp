@@ -82,17 +82,20 @@ def argparse_init():
     return p
 
 
-def load_model(checkpoint_path, crs):
+def load_model(checkpoint_path, crs, threshold):
     """Load the model weights from checkpoint"""
     model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=6, out_classes=1, arch='MAnet',
-        encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs)
+        encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs,
+        threshold=threshold)
     return model
 
-def load_model_quantized(checkpoint_path, crs):
+
+def load_model_quantized(checkpoint_path, crs, threshold):
     """Load the model weights from checkpoint"""
     model = ResModel(arch='MAnet', encoder_name="resnet34",
-                     in_channels=6, out_classes=1, weights=None, crs=crs)
+                     in_channels=6, out_classes=1, weights=None, crs=crs,
+                     threshold)
     model.model = nc_load(checkpoint_path, model.model)
     return model
 
@@ -203,6 +206,7 @@ def main():
 
     parser = argparse_init()
     args = parser.parse_args()
+    print(args.threshold)
 
     # Open filehandles of rasters
     src_list = open_sources(args.source_path)
@@ -226,9 +230,11 @@ def main():
 
     # Load model
     if args.quantized:
-        model = load_model_quantized(args.model_checkpoint, crs=src_list[0].crs)
+        model = load_model_quantized(args.model_checkpoint, crs=src_list[0].crs,
+                    threshold=args.threshold)
     else:
-        model = load_model(args.model_checkpoint, crs=src_list[0].crs)
+        model = load_model(args.model_checkpoint, crs=src_list[0].crs,
+                    threshold=args.threshold)
     model.model.eval()
 
     # Create dataset and loader

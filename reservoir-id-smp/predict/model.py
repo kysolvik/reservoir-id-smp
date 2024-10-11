@@ -8,28 +8,28 @@ import affine
 
 class ResModel(pl.LightningModule):
 
-    def __init__(self, arch, encoder_name, in_channels, out_classes, crs, **kwargs):
+    def __init__(self, arch, encoder_name, in_channels, out_classes, crs, threshold, **kwargs):
         super().__init__()
         self.model = smp.MAnet(encoder_name=encoder_name, in_channels=in_channels, classes=out_classes,
                                aux_params=dict(
                                    classes=1,
                                    dropout=None)
                                )
+        self.threshold = threshold
         self.crs = crs
         self.crop_transform = torchvision.transforms.CenterCrop(500)
 
-    def write_imgs(self, preds, outfile, geo_transform):
+    def write_imgs(self, preds, outfile, geo_transform, threshold):
         """Write a batch of predictions to tiffs"""
 
-#         preds[preds >= 0.5] = 1
-#         preds[preds < 0.5] = 0
-        preds = np.round(preds*100).astype(np.uint8)
+        preds[preds >= self.threshold] = 1
+        preds[preds < self.threshold] = 0
         for i in range(preds.shape[0]):
             new_dataset = rasterio.open(
                 outfile[i], 'w', driver='GTiff',
                 height=preds.shape[1], width=preds.shape[2],
                 count=1, dtype='uint8', compress='lzw',
-                crs=self.crs, nodata=0,
+                crs=self.crs, nodata=255,
                 transform=geo_transform[i]
             )
             pred = preds[i]

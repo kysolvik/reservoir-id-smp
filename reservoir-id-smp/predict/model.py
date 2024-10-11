@@ -19,7 +19,7 @@ class ResModel(pl.LightningModule):
         self.crs = crs
         self.crop_transform = torchvision.transforms.CenterCrop(500)
 
-    def write_imgs(self, preds, outfile, geo_transform, threshold):
+    def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
 
         preds[preds >= self.threshold] = 1

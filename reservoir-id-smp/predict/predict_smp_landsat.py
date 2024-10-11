@@ -95,7 +95,7 @@ def load_model_quantized(checkpoint_path, crs, threshold):
     """Load the model weights from checkpoint"""
     model = ResModel(arch='MAnet', encoder_name="resnet34",
                      in_channels=6, out_classes=1, weights=None, crs=crs,
-                     threshold)
+                     threshold=threshold)
     model.model = nc_load(checkpoint_path, model.model)
     return model
 

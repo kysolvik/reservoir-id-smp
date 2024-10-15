@@ -1,16 +1,34 @@
 year_list=(2020)
 satellite="landsat8"
-pred_threshold=0.703
+
+# Landsat 8
+if [ $satellite = 'landsat8' ]; then
+    pred_threshold=0.703
+    mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy
+    bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls8_10m_v9.npy
+fi
+
+# Landsat 7
+if [ $satellite = 'landsat7' ]; then
+    pred_threshold=0.0032
+    mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
+    bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls7_10m_v9.npy
+fi
+
+# Landsat 5
+if [ $satellite = 'landsat5' ]; then
+    pred_threshold=0.035
+    mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
+    bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls5_10m_v9.npy
+fi
 
 # Args:
 out_base_path=./out_allbrazil/${satellite}
-model_gs_path=gs://res-id/cnn/models/best_smp/ls8_sr_v21_quantized.pt
-
-mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy
-bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls8_10m_v9.npy
+model_gs_path=gs://res-id/cnn/models/best_smp/l8_sr_v21_quantized.pt
 
 # Careful! Cannot include trailing '/' in data_path
-data_path_base=gs://res-id/ee_exports/all_brazil/${satellite}_30m
+# data_path_base=gs://res-id/ee_exports/all_brazil/${satellite}_30m
+data_path_base=gs://res-id/ee_exports/all_brazil_v1/${satellite}_30m
 region_shp_path='gs://res-id/cnn/aux_data/Brazil_10kmbuffer_noremoteislands_noholes.*'
 
 # Terminal settings
@@ -40,8 +58,9 @@ do
     sed -i 's!gs://!/vsigs/!' filelist.txt
 
     mkdir -p vrts
-    # For Landsat8:
-    gdalbuildvrt vrts/ls_10m_${satellite}_${y}.vrt -r cubic -tap -tr 0.000089831528412 0.000089831528412 -input_file_list filelist.txt
+    gdalbuildvrt vrts/ls_10m_${satellite}_${y}.vrt -r cubic -tap -te -74.0539679 -33.7869853 -34.7077585 5.3175773 -tr 0.000089831528412 0.000089831528412 -input_file_list filelist.txt
+    # Small area test
+#     gdalbuildvrt vrts/ls_10m_${satellite}_${y}.vrt -r cubic -tap -te -50.0601663 -10.7932735 -49.7898416 -9.3238655 -tr 0.000089831528412 0.000089831528412 -input_file_list filelist.txt
     rm filelist.txt
 
     # Run
@@ -51,5 +70,5 @@ do
 done
 
 # Prep logs/shutdown
-# mkdir -p logs
+mkdir -p logs
 # tsp bash tsp_wrapup.sh

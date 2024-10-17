@@ -1,4 +1,4 @@
-for f in ../../predict/full_outputs/v2/full_aea/*.tif;
+for f in ../../predict/full_outputs/v3/*aea.tif;
 do 
     basename_f=$(basename $f)
     csv_out=out/${basename_f/tif/csv}

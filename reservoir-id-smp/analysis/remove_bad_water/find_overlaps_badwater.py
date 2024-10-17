@@ -18,7 +18,7 @@ hydropoly_tif = sys.argv[2]
 out_csv = sys.argv[3]
 box_size = 25000
 
-prob=True
+prob=False
 
 fh = rio.open(tif)
 hydropoly_fh = rio.open(hydropoly_tif)

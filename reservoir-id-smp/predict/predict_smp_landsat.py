@@ -34,10 +34,10 @@ from model import ResModel
 TILE_ROWS = 640
 TILE_COLS = 640
 
-OUT_ROWS = 500
-OUT_COLS = 500
+OUT_ROWS = 480
+OUT_COLS = 480
 
-OVERLAP = 140
+OVERLAP = 160
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5]
 
@@ -73,7 +73,7 @@ def argparse_init():
                    default=False)
     p.add_argument('--threshold',
                    help='Prediction threshold for binary class (0.0 - 1.0)',
-                   default=0.5,
+                   default=None,
                    type=float)
     p.add_argument('out_dir',
                    help='Output directory for predicted subsets',
@@ -206,7 +206,6 @@ def main():
 
     parser = argparse_init()
     args = parser.parse_args()
-    print(args.threshold)
 
     # Open filehandles of rasters
     src_list = open_sources(args.source_path)

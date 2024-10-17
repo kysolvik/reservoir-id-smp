@@ -17,13 +17,16 @@ class ResModel(pl.LightningModule):
                                )
         self.threshold = threshold
         self.crs = crs
-        self.crop_transform = torchvision.transforms.CenterCrop(500)
+        self.crop_transform = torchvision.transforms.CenterCrop(480)
 
     def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
 
-        preds[preds >= self.threshold] = 1
-        preds[preds < self.threshold] = 0
+        if self.threshold is not None:
+            preds[preds >= self.threshold] = 1
+            preds[preds < self.threshold] = 0
+        else:
+            preds = np.round(preds*254).astype(np.uint8)
         for i in range(preds.shape[0]):
             new_dataset = rasterio.open(
                 outfile[i], 'w', driver='GTiff',

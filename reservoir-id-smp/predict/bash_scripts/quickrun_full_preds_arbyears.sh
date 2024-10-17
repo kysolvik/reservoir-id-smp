@@ -3,21 +3,18 @@ satellite="landsat8"
 
 # Landsat 8
 if [ $satellite = 'landsat8' ]; then
-    pred_threshold=0.703
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls8_10m_v9.npy
 fi
 
 # Landsat 7
 if [ $satellite = 'landsat7' ]; then
-    pred_threshold=0.0032
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls7_10m_v9.npy
 fi
 
 # Landsat 5
 if [ $satellite = 'landsat5' ]; then
-    pred_threshold=0.035
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls5_10m_v9.npy
 fi
@@ -65,10 +62,9 @@ do
 
     # Run
     tsp python3 -u predict_smp_landsat.py vrts/ls_10m_${satellite}_${y}.vrt model.ckpt mean_std.npy bands_minmax.npy \
-        $out_path --quantized --region_shp shp/Brazil_10kmbuffer_noremoteislands_noholes.shp \
-        --threshold $pred_threshold
+        $out_path --quantized --region_shp shp/Brazil_10kmbuffer_noremoteislands_noholes.shp
 done
 
 # Prep logs/shutdown
 mkdir -p logs
-# tsp bash tsp_wrapup.sh
+tsp bash tsp_wrapup.sh

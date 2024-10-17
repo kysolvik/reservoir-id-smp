@@ -24,13 +24,16 @@ out_base_path=./out_allbrazil/${satellite}
 model_gs_path=gs://res-id/cnn/models/best_smp/l8_sr_v21_quantized.pt
 
 # Careful! Cannot include trailing '/' in data_path
-# data_path_base=gs://res-id/ee_exports/all_brazil/${satellite}_30m
-data_path_base=gs://res-id/ee_exports/all_brazil_v1/${satellite}_30m
+data_path_base=gs://res-id/ee_exports/all_brazil/${satellite}_30m
 region_shp_path='gs://res-id/cnn/aux_data/Brazil_10kmbuffer_noremoteislands_noholes.*'
 
 # Terminal settings
 export TERM=xterm
 echo 'export TERM=xterm' >> .bashrc
+
+# GDAL proj info locations
+export GDAL_DATA=/home/ksolvik/miniconda3/share/gdal/
+export PROJ_LIB=/home/ksolvik/miniconda3/share/proj/
 
 # Get code
 git clone https://github.com/kysolvik/reservoir-id-smp.git

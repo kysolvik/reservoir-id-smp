@@ -1,47 +1,55 @@
+# Set some necessary env variables
+export PATH="/home/ksolvik/miniconda3/bin/:$PATH"
+# GDAL settings
+export GDAL_DATA=/home/ksolvik/miniconda3/share/gdal/
+export PROJ_LIB=/home/ksolvik/miniconda3/share/proj/
+cd /home/ksolvik
+echo $PATH>>foo.txt
 hostname_to_parse=$(hostname)
 satellite=${hostname_to_parse:3:8}
 y=${hostname_to_parse:12:4}
 vm_name="rp-${satellite}-${y}"
 touch "~/${satellite}_${year}.foo"
 # Landsat 8
-if [ $satellite = 'landsat8' ]; then
+if [ $satellite = "landsat8" ]; then
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls8_10m_v9.npy
 fi
 
 # Landsat 7
-if [ $satellite = 'landsat7' ]; then
+if [ $satellite = "landsat7" ]; then
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls7_10m_v9.npy
 fi
 
 # Landsat 5
-if [ $satellite = 'landsat5' ]; then
+if [ $satellite = "landsat5" ]; then
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls7_v9.npy
     bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls5_10m_v9.npy
 fi
+echo $mean_std_path
 
 # Args:
 out_base_path=./out_allbrazil/${satellite}
 model_gs_path=gs://res-id/cnn/models/best_smp/l8_sr_v21_quantized.pt
 out_path=${out_base_path}/$y
 
-# Careful! Cannot include trailing '/' in data_path
+# Careful! Cannot include trailing "/" in data_path
 data_path_base=gs://res-id/ee_exports/all_brazil/${satellite}_30m
-region_shp_path='gs://res-id/cnn/aux_data/Brazil_10kmbuffer_noremoteislands_noholes.*'
+region_shp_path="gs://res-id/cnn/aux_data/Brazil_10kmbuffer_noremoteislands_noholes.*"
 
 
 # If not already run, do prep work
 if [[ ! -f ~/already_run.foo ]]; then
     # Terminal settings
     export TERM=xterm
-    echo 'export TERM=xterm' >> .bashrc
+    echo "export TERM=xterm" >> .bashrc
 
     # GDAL proj info locations
     export GDAL_DATA=/home/ksolvik/miniconda3/share/gdal/
     export PROJ_LIB=/home/ksolvik/miniconda3/share/proj/
-    echo 'export GDAL_DATA=/home/ksolvik/miniconda3/share/gdal/' >> .bashrc
-    echo 'export PROJ_LIB=/home/ksolvik/miniconda3/share/proj' >> .bashrc
+    echo "export GDAL_DATA=/home/ksolvik/miniconda3/share/gdal/" >> .bashrc
+    echo "export PROJ_LIB=/home/ksolvik/miniconda3/share/proj" >> .bashrc
 
     # Get code
     git clone https://github.com/kysolvik/reservoir-id-smp.git
@@ -59,7 +67,7 @@ if [[ ! -f ~/already_run.foo ]]; then
     echo $out_path
     mkdir -p $out_path
     gsutil ls "${data_path_base}/${y}/*.tif" > filelist.txt
-    sed -i 's!gs://!/vsigs/!' filelist.txt
+    sed -i "s!gs://!/vsigs/!" filelist.txt
 
     mkdir -p vrts
     tsp gdalbuildvrt vrts/ls_10m_${satellite}_${y}.vrt -r cubic -tap -te -74.0539679 -33.7869853 -34.7077585 5.3175773 -tr 0.000089831528412 0.000089831528412 -input_file_list filelist.txt

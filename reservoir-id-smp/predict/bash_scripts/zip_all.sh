@@ -1,5 +1,6 @@
-satellite=landsat5
-sat_short=ls5
+satellite=$1
+sat_num=${satellite:(-1)}
+sat_short="ls${sat_num}"
 sudo apt install -y zip
 for d in out_allbrazil/$satellite/*;
 do 

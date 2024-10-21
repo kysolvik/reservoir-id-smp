@@ -17,7 +17,7 @@ gcloud compute instances create $vm_name\
     --shielded-vtpm \
     --shielded-integrity-monitoring \
     --labels=goog-ec-src=vm_add-gcloud \
-    --reservation-affinity=any
-    --metadata-from-file=shutdown-script=./spot_vm_shutdownscript.sh
+    --reservation-affinity=any \
+    --metadata-from-file=shutdown-script=./spot_vm_shutdownscript.sh \
     --metadata-from-file=startup-script=./spot_vm_startupscript.sh
 

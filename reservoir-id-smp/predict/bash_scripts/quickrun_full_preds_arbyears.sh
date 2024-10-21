@@ -1,5 +1,6 @@
-year_list=(2020)
-satellite="landsat8"
+satellite=$1
+year_start=$2
+year_end=$3
 
 # Landsat 8
 if [ $satellite = 'landsat8' ]; then
@@ -40,7 +41,6 @@ git clone https://github.com/kysolvik/reservoir-id-smp.git
 cd reservoir-id-smp/reservoir-id-smp/predict/
 git checkout quantized-prediction
 
-
 # Get data files
 gsutil cp $model_gs_path ./model.ckpt
 gsutil cp $mean_std_path ./mean_std.npy
@@ -49,7 +49,7 @@ mkdir -p shp
 gsutil cp $region_shp_path ./shp/
 
 # Prep vrt
-for y in ${year_list[@]};
+for y in $(seq $year_start $year_end);
 do
     out_path=${out_base_path}/$y
     echo $out_path

@@ -193,6 +193,8 @@ def get_indices(src, done_ind, region_gpd=None):
     if done_ind.shape[0] > 0:
         print(start_ind.flags['F_CONTIGUOUS'])
         print(done_ind.flags['F_CONTIGUOUS'])
+        # Remove last batch of done indices in case there was a shutdown
+        done_ind = done_ind.argsort[:-4]
         start_in_done = np.in1d(start_ind.astype('int64').view('int64, int64'),
                                 done_ind.astype('int64').view('int64, int64'))
         start_ind = start_ind[~start_in_done]

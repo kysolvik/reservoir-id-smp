@@ -71,7 +71,6 @@ if [[ ! -f ~/already_run.foo ]]; then
 
     mkdir -p vrts
     tsp gdalbuildvrt vrts/ls_10m_${satellite}_${y}.vrt -r cubic -tap -te -74.0539679 -33.7869853 -34.7077585 5.3175773 -tr 0.000089831528412 0.000089831528412 -input_file_list filelist.txt
-    tsp rm filelist.txt
     touch ~/already_run.foo
 
 else

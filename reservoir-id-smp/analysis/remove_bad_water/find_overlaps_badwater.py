@@ -14,7 +14,7 @@ import sys
 from _border_ar import calc_border_ar
 
 tif = sys.argv[1]
-cutoff=sys.argv[2]
+cutoff = int(sys.argv[2])
 hydropoly_tif = sys.argv[3]
 out_csv = sys.argv[4]
 box_size = 25000

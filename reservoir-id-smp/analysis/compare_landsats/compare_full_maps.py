@@ -9,14 +9,25 @@ import os
 from scipy import ndimage
 
 base_tif = sys.argv[1]
-compare_tif = sys.argv[2]
+comp_tif = sys.argv[2]
 out_csv = sys.argv[3]
-box_size = 25000
+base_ls_name = os.path.basename(base_tif)[:3]
+comp_ls_name = os.path.basename(comp_tif)[:3]
 
-out_csv_base_overlaps = base_tif.replace('.tif', '_overlaps.csv')
-out_csv_comp_overlaps = compare_tif.replace('.tif', '_overlaps.csv')
+
+cutoff_dict = {
+        'ls5': 9,
+        'ls7': 1,
+        'ls8': 179
+        }
+base_cutoff = cutoff_dict[base_ls_name]
+comp_cutoff = cutoff_dict[comp_ls_name] 
+box_size = 10000
+
+out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace('.tif', '_overlaps.csv'))
+out_csv_comp_overlaps = os.path.join('./out/', os.path.basename(comp_tif).replace('.tif', '_overlaps.csv'))
 fh_base = rio.open(base_tif)
-fh_comp = rio.open(compare_tif)
+fh_comp = rio.open(comp_tif)
 
 
 def calc_stats(ar1, ar2):
@@ -56,12 +67,14 @@ for i in range(start_ind.shape[0]):
                             window=Window(
                                 int(start_ind_col), int(start_ind_row),
                                 int(box_size_cols), int(box_size_rows))
-                            ) == 1)
+                            ))
     comp_ar = (fh_comp.read(1,
                             window=Window(
                                 int(start_ind_col), int(start_ind_row),
                                 int(box_size_cols), int(box_size_rows))
-                            ) == 1)
+                            ))
+    base_ar = (base_ar >= base_cutoff)*(base_ar!=255)
+    comp_ar = (comp_ar >= comp_cutoff)*(comp_ar!=255)
 
     tp, fp, fn = calc_stats(base_ar, comp_ar)
     out_dict = {
@@ -85,70 +98,77 @@ for i in range(start_ind.shape[0]):
     base_label_values = np.arange(1, base_ar_nb_labeled + 1)
 
     comp_labeled, comp_ar_nb_labeled = ndimage.label(
-            base_ar,
+            comp_ar,
             structure=[[1, 1, 1],
                        [1, 1, 1],
                        [1, 1, 1]])
     comp_label_values = np.arange(1, comp_ar_nb_labeled + 1)
 
-    base_sizes = ndimage.labeled_comprehension(
-            base_ar,
-            base_labeled,
-            base_label_values,
-            np.sum,
-            int,
-            )
-    comp_sizes = ndimage.labeled_comprehension(
-            comp_ar,
-            comp_labeled,
-            comp_label_values,
-            np.sum,
-            int,
-            )
-    base_containing_comp = ndimage.labeled_comprehension(
-            comp_labeled,
-            base_labeled,
-            base_label_values,
-            np.unique,
-            np.ndarray,
-            [0])
+    if base_ar_nb_labeled > 0:
+        base_sizes = ndimage.labeled_comprehension(
+                base_ar,
+                base_labeled,
+                base_label_values,
+                np.sum,
+                int,
+                0
+                )
+        base_containing_comp = ndimage.labeled_comprehension(
+                comp_labeled,
+                base_labeled,
+                base_label_values,
+                np.unique,
+                np.ndarray,
+                [0])
 
-    comp_containing_base = ndimage.labeled_comprehension(
-            base_labeled,
-            comp_labeled,
-            base_label_values,
-            np.unique,
-            np.ndarray,
-            [0])
 
-    out_dict_base = {
-            'id': base_label_values,
-            'size': base_sizes,
-            'row_start': start_ind_row,
-            'col_start': start_ind_col,
-            'box_rows': box_size_rows,
-            'box_cols': box_size_cols,
-            'overlaps': base_containing_comp
-            }
+        out_dict_base = {
+                'id': base_label_values,
+                'size': base_sizes,
+                'row_start': start_ind_row,
+                'col_start': start_ind_col,
+                'box_rows': box_size_rows,
+                'box_cols': box_size_cols,
+                'overlaps': base_containing_comp
+                }
+        pd.DataFrame(out_dict_base).to_csv(
+                out_csv_base_overlaps,
+                mode='a',
+                header=(not os.path.isfile(out_csv_base_overlaps)),
+                index=False)
 
-    out_dict_comp = {
-            'id': comp_label_values,
-            'size': comp_sizes,
-            'row_start': start_ind_row,
-            'col_start': start_ind_col,
-            'box_rows': box_size_rows,
-            'box_cols': box_size_cols,
-            'overlaps': comp_containing_base
-            }
-    pd.DataFrame(out_dict_base).to_csv(out_csv_base_overlaps,
-                                       mode='a', header=(not os.path.isfile(out_csv_base_overlaps)),
-                                       index=False)
 
-    pd.DataFrame(out_dict_comp).to_csv(out_csv_comp_overlaps,
-                                       mode='a', header=(not os.path.isfile(out_csv_comp_overlaps)),
-                                       index=False)
+    if comp_ar_nb_labeled > 0:
+        comp_sizes = ndimage.labeled_comprehension(
+                comp_ar,
+                comp_labeled,
+                comp_label_values,
+                np.sum,
+                int,
+                0
+                )
+        comp_containing_base = ndimage.labeled_comprehension(
+                base_labeled,
+                comp_labeled,
+                comp_label_values,
+                np.unique,
+                np.ndarray,
+                [0])
+        out_dict_comp = {
+                'id': comp_label_values,
+                'size': comp_sizes,
+                'row_start': start_ind_row,
+                'col_start': start_ind_col,
+                'box_rows': box_size_rows,
+                'box_cols': box_size_cols,
+                'overlaps': comp_containing_base
+                }
+        pd.DataFrame(out_dict_comp).to_csv(
+                out_csv_comp_overlaps,
+                mode='a',
+                header=(not os.path.isfile(out_csv_comp_overlaps)),
+                index=False)
 
-print(out_dict_list)
 out_df = pd.DataFrame(out_dict_list)
 out_df.to_csv(out_csv, mode='w', header=True,
               index=False)

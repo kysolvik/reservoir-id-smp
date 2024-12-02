@@ -172,5 +172,14 @@ cython_debug/
 *.qmd
 *.geojson
 *.dbf
+*.png
+*.gif
+*.xml
+*.npy
+*.ckpt
+logs/
+lightning_logs/
 data/
 out/
+in/
+

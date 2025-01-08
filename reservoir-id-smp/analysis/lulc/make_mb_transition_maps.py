@@ -47,11 +47,11 @@ def calc_mask(ar, cover):
     return mask
 
 def make_transition_maps(y):
-    og_fp =  './in/mato_grosso/aea/mapbiomas-brazil-collection-80-matogrosso-{}_aea_30m.tif'.format(y)
+    og_fp =  './in/mato_grosso/aea/mapbiomas-brazil-collection-90-matogrossomt-{}_aea_30m.tif'.format(y)
     og_ar = rio.open(og_fp).read()
 
     compare_y = y+1
-    new_fp = './in/mato_grosso/aea/mapbiomas-brazil-collection-80-matogrosso-{}_aea_30m.tif'.format(compare_y)
+    new_fp = './in/mato_grosso/aea/mapbiomas-brazil-collection-90-matogrossomt-{}_aea_30m.tif'.format(compare_y)
     new_ar = rio.open(new_fp).read()
 
     # Write out values
@@ -63,7 +63,7 @@ def make_transition_maps(y):
             
     return out_ar
 
-src = rio.open('./in/mato_grosso/aea/mapbiomas-brazil-collection-80-matogrosso-1985_aea_30m.tif')
+src = rio.open('./in/mato_grosso/aea/mapbiomas-brazil-collection-90-matogrossomt-1985_aea_30m.tif')
 def write_raster(ar, out_path, src):
     with rio.Env():
         # Write an array as a raster band to a new 8-bit file. For
@@ -82,7 +82,8 @@ def write_raster(ar, out_path, src):
 
 
 def main():
-    for y in range(2021, 2022):
+#     for y in range(1985, 2023):
+    for y in range(1998, 2001):
         trans_ar = make_transition_maps(y)
 
         out_path = './out/lulc_transition_maps/mb_transition_{}_{}.tif'.format(y, y+1)

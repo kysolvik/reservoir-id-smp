@@ -10,10 +10,17 @@ mb_keys_dict = {
     'pasture': np.array([15])
 }
 
+def year_from_string(string):
+    """Regex helper function"""
+    match = re.match(r'.*([1-2][0-9]{3})', string)
+    if match is None:
+        raise ValueError('No year found in string')
+    return match.group(1)
+
 def read_process_lulc_csv(csv):
     df = pd.read_csv(csv, index_col=0)
     df = df.loc[:, df.columns[-1]]
-    lulc_y = int(df.name[42:46]) # For all of mato grosso
+    lulc_y = year_from_string(df.name) #int(df.name[44:48]) # For all of mato grosso
 
     df = pd.DataFrame(list(df.apply(eval).values), index=df.index)
     df.columns = pd.MultiIndex.from_product([[lulc_y], df.columns])
@@ -54,21 +61,33 @@ def calc_lulc_full(df):
         
     return new_df
 
-def process_year_lulc(y):
-    all_csvs = glob.glob('./out/lulc_res_counts/lulc_stats_res_{}_mb_*_counts.csv'.format(y))
-    all_csvs.sort()
-    full_df = pd.concat([read_process_lulc_csv(csv) for csv in all_csvs], axis=1)
-    lulc_df = calc_lulc_full(full_df)
-    return lulc_df
+def process_year_lulc(y, satellite):
+    all_csvs = glob.glob(
+            './out/full/lulc_stats_{}_res_{}_mb_*_counts.csv'.format(
+                y, satellite)
+            )
+    if len(all_csvs) > 0:
+        all_csvs.sort()
+        full_df = pd.concat(
+                [read_process_lulc_csv(csv) for csv in all_csvs], axis=1)
+        lulc_df = calc_lulc_full(full_df)
+        return lulc_df
+    else:
+        return None
 
 
 def main():
-    year_range = np.arange(1985, 2022)
+    year_range = np.arange(1984, 2024)
 
     for y in year_range:
-        lulc_y_df = process_year_lulc(y)
-        lulc_y_df.to_csv('./out/res_lulc_processed/res_lulc_{}.csv'.format(y))
+        for sat in ['ls5', 'ls7', 'ls8']:
+            lulc_y_df = process_year_lulc(y, sat)
+            if lulc_y_df is not None:
+                lulc_y_df.to_csv(
+                        './out/res_lulc_processed/res_lulc_{}_{}.csv'.format(
+                            sat, y)
+                        )
 
 
-if __name__=='__main__':
+if __name__ == '__main__':
     main()

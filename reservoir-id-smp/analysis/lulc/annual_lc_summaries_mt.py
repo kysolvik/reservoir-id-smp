@@ -38,7 +38,7 @@ mb_keys_dict = {
     'pasture': np.array([15])
 }
 
-year_range = np.arange(1985, 2023)
+year_range = np.arange(1985, 2024)
 
 areas_per_year = []
 for y in year_range:
@@ -52,7 +52,7 @@ for y in year_range:
     areas_per_year.append(out_dict)
 
 area_df = pd.DataFrame(areas_per_year)
-area_df.loc[:,'year'] = np.arange(1985,2023)
+area_df.loc[:,'year'] = np.arange(1985,2024)
 area_df = area_df.set_index('year')
 
 area_df.to_csv(out_csv)

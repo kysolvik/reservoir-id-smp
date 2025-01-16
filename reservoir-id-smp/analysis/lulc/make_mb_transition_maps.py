@@ -82,8 +82,7 @@ def write_raster(ar, out_path, src):
 
 
 def main():
-#     for y in range(1985, 2023):
-    for y in range(1998, 2001):
+    for y in range(1985, 2023):
         trans_ar = make_transition_maps(y)
 
         out_path = './out/lulc_transition_maps/mb_transition_{}_{}.tif'.format(y, y+1)

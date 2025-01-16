@@ -25,3 +25,20 @@ Linking reservoirs to LULC. There are several different analyses happening in th
         - If the following year 5% of the buffer changes from forest to cropland, that's another 0.33 weight. 
         - Then if 5% of the buffer changes from pasture to cropland, that's 0.33 weight. 
     - Other option for method C is just to take the biggest transition in each year.
+
+
+## Process:
+
+1. bash_scripts/quick_rasterextract_allyears_allsats.sh
+
+2. process_lulc_csvs.py
+
+3. make_mb_transition_maps.py
+
+4. calc_transition_summaries.py
+
+5. annual_lc_summaries_mt.py
+
+6. lulc_figs_w_gam.ipynb
+
+

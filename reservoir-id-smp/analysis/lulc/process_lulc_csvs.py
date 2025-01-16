@@ -1,6 +1,7 @@
 import pandas as pd
 import numpy as np
 import glob
+import re
 
 mb_keys_dict = {
     'crop': np.array([18,19,39,20,40,62,41,36,46,47,35,48]),
@@ -12,7 +13,7 @@ mb_keys_dict = {
 
 def year_from_string(string):
     """Regex helper function"""
-    match = re.match(r'.*([1-2][0-9]{3})', string)
+    match = re.match(r'.*([1-2][0-9]{3}).*', string)
     if match is None:
         raise ValueError('No year found in string')
     return match.group(1)
@@ -63,14 +64,16 @@ def calc_lulc_full(df):
 
 def process_year_lulc(y, satellite):
     all_csvs = glob.glob(
-            './out/full/lulc_stats_{}_res_{}_mb_*_counts.csv'.format(
+            './out/full_backup/lulc_stats_{}_res_{}_mb_*_counts.csv'.format(
                 y, satellite)
             )
     if len(all_csvs) > 0:
         all_csvs.sort()
+        areas = pd.read_csv(all_csvs[0])['area'].values
         full_df = pd.concat(
                 [read_process_lulc_csv(csv) for csv in all_csvs], axis=1)
         lulc_df = calc_lulc_full(full_df)
+        lulc_df['area'] = areas
         return lulc_df
     else:
         return None

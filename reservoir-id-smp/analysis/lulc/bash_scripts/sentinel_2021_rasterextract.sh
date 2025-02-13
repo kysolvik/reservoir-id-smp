@@ -1,0 +1,1 @@
+python3 raster-buffer-extract/raster-buffer-extract/fraster_extract_wrapper.py ./in/shps_all_brazil/sentinel_2021_v6_aea_merged.shp ./in/brazil/mb-brazil-c9-2021.tif out/lulc_stats_res_sentinel_2021.csv 1000 --stat count_dict --not_latlon --nsample 10000

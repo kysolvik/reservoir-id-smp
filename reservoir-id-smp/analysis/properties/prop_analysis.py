@@ -8,8 +8,8 @@ import re
 
 # Constants
 PROPERTY_SHP = './data/pa_br_landtenure_studyarea_only_aea.shp'
-RES_CSV_PATTERN = '../remove_bad_water/out/ls*merged.csv'
-LULC_TIF_PATTERN = '../lulc/in/mato_grosso/*.tif'
+RES_CSV_PATTERN = '../remove_bad_water/out/v3_cloudfilt/ls*v3_merged.csv'
+LULC_TIF_PATTERN = '../lulc/in/mato_grosso/aea/*.tif'
 
 def year_from_string(string):
     """Regex helper function"""
@@ -34,28 +34,33 @@ def read_process_csv_to_gdf(csv):
 
 def sjoin_summarize(points_gdf, poly_gdf, poly_field):
     
-    joined_gdf = gpd.sjoin(points_gdf, poly_gdf, predicate='within', how='inner')
+    joined_gdf = gpd.sjoin(points_gdf, poly_gdf, predicate='within', how='right')
     return joined_gdf[['area_ha', poly_field]].groupby(poly_field).agg(['sum', 'count', 'median'])['area_ha']
     
 def main():
     prop_gdf = gpd.read_file(PROPERTY_SHP)
     prop_gdf = prop_gdf.rename(columns={'area_ha':'prop_area_ha'})
+    prop_gdf_buffer = prop_gdf.copy()
+    prop_gdf_buffer['geometry'] = prop_gdf_buffer.geometry.buffer(30)
 
     # Reservoir analysis
     print('Starting Reservoir Analysis')
     all_csvs = glob.glob(RES_CSV_PATTERN)
+    all_csvs.sort()
     for csv in all_csvs:
         year = year_from_string(os.path.basename(csv))
-        print(year, ' Start')
-        out_path = './out/res_stats/prop_res_stats_{}.csv'.format(year)
+        satellite = os.path.basename(csv)[:3]
+        print(year, satellite, ' Start')
+        out_path = './out/res_stats_buffer/prop_res_stats_{}_{}.csv'.format(satellite, year )
         res_gdf = read_process_csv_to_gdf(csv)
-        prop_res_joined = sjoin_summarize(res_gdf, prop_gdf, 'fid')
+        prop_res_joined = sjoin_summarize(res_gdf, prop_gdf_buffer, 'fid')
         prop_res_joined.index = prop_res_joined.index.astype(int)
         prop_res_joined.to_csv(out_path)
         print(year, ' End')
 
     print('Starting MapBiomas LULC Analysis')
     all_mb_tifs = glob.glob(LULC_TIF_PATTERN)
+    all_mb_tifs.sort()
     for tif_path in all_mb_tifs:
         year = year_from_string(os.path.basename(tif_path))
         print(year, ' Start')

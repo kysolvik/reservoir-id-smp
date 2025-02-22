@@ -1,3 +1,4 @@
+# For landsat
 satellite=$1
 sat_num=${satellite:(-1)}
 sat_short="ls${sat_num}"

@@ -10,11 +10,11 @@ import time
 import rasterio
 
 
-class ResDataset(BaseDataset):
-    """CamVid Dataset. Read images, apply augmentation and preprocessing transformations.
+class ResDatasetMultiFile(BaseDataset):
+    """
 
     Args:
-        fh (rasterio filehandle):
+        fhs (rasterio filehandles):
         augmentation (albumentations.Compose): data transfromation pipeline 
             (e.g. flip, scale, etc.)
 
@@ -24,7 +24,7 @@ class ResDataset(BaseDataset):
     def __init__(
             self,
             start_inds,
-            fh,
+            fhs,
             bands_minmax,
             band_selection,
             tile_rows,
@@ -36,14 +36,14 @@ class ResDataset(BaseDataset):
     ):
         self.ids = np.arange(start_inds.shape[0])
         self.start_inds = start_inds
-        self.fh = fh
+        self.fhs = fhs
         self.band_selection = band_selection
         self.overlap = overlap
         self.tile_rows = tile_rows
         self.tile_cols = tile_cols
         self.out_dir = out_dir
         self.bands_minmax = bands_minmax
-        self.src_transform = self.fh.transform
+        self.src_transform = self.fhs[0].transform
         self.preprocessing_to_tensor = self.get_preprocessing_to_tensor()
         self.mean_std = mean_std
         self.add_nds = add_nds
@@ -132,14 +132,15 @@ class ResDataset(BaseDataset):
 
         nd_list =[]
 
+        # SENTINEL ND bands
         # Add  Gao NDWI
-        nd_list += [self.calc_nd(img, 4, 5)]
+        nd_list += [self.calc_nd(img, 3, 7)]
         # Add  MNDWI
-        nd_list += [self.calc_nd(img, 2, 5)]
+        nd_list += [self.calc_nd(img, 1, 7)]
         # Add McFeeters NDWI band
-        nd_list += [self.calc_nd(img, 2, 4)]
+        nd_list += [self.calc_nd(img, 1, 3)]
         # Add NDVI band
-        nd_list += [self.calc_nd(img, 4, 3)]
+        nd_list += [self.calc_nd(img, 3, 2)]
         
         return np.stack(nd_list, axis=2)
 
@@ -178,7 +179,11 @@ class ResDataset(BaseDataset):
             img = np.concatenate([img, nds], axis=2)[:, :, band_selection]
         else:
             img = img[:,:, band_selection]
-        img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
+        # For sentinel, mean_std is already the same size
+        if mean_std.shape[1] == len(band_selection):
+            img = (img - mean_std[0])/mean_std[1]
+        else:
+            img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
 
         return img
 
@@ -197,10 +202,10 @@ class ResDataset(BaseDataset):
 
         # Try/except
         try:
-            base_img = self.fh.read(window=((row, row + self.tile_rows),
-                                            (col, col + self.tile_cols)))
-        except: #rasterio.errors.RasterioIOError:
-            time.sleep(600)
-            base_img = self.fh.read(window=((row, row + self.tile_rows),
-                                            (col, col + self.tile_cols)))
-        return np.moveaxis(base_img, 0, 2)
+            og_img_list = [f.read(window=((row, row + self.tile_rows),
+                                          (col, col + self.tile_cols))) for f in self.fhs]
+        except:
+            og_img_list = [f.read(window=((row, row + self.tile_rows),
+                                          (col, col + self.tile_cols))) for f in self.fhs]
+
+        return np.moveaxis(np.vstack(og_img_list), 0, -1)

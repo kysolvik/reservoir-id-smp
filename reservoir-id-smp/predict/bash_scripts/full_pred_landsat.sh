@@ -61,4 +61,4 @@ done
 
 # Prep logs/shutdown
 mkdir -p logs
-tsp bash tsp_wrapup.sh
+tsp bash bash_scripts/tsp_wrapup.sh

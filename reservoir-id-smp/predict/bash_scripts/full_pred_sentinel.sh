@@ -59,4 +59,4 @@ tsp python3 -u predict_smp_sentinel.py vrts/${satellite}_${y}_s2_10m.vrt model.c
 
 # Prep logs/shutdown
 mkdir -p logs
-# tsp bash tsp_wrapup.sh
+tsp bash bash_scripts/tsp_wrapup.sh

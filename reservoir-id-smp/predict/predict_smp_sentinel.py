@@ -41,7 +41,7 @@ OVERLAP = 140
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
 # Only including 4 10m spectral, 2 SAR, and SwIR for v6
-BANDS_MINMAX_SELECTION = [0, 1, 2, 3, 4, 5, 10, 11]
+BANDS_MINMAX_SELECTION = [0, 1, 2, 3, 4, 5, 6, 7]
 
 
 def argparse_init():

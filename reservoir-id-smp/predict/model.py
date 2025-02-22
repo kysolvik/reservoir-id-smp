@@ -8,7 +8,7 @@ import affine
 
 class ResModel(pl.LightningModule):
 
-    def __init__(self, arch, encoder_name, in_channels, out_classes, crs, threshold, **kwargs):
+    def __init__(self, arch, encoder_name, in_channels, out_classes, crs, threshold=None, **kwargs):
         super().__init__()
         self.model = smp.MAnet(encoder_name=encoder_name, in_channels=in_channels, classes=out_classes,
                                aux_params=dict(
@@ -17,7 +17,7 @@ class ResModel(pl.LightningModule):
                                )
         self.threshold = threshold
         self.crs = crs
-        self.crop_transform = torchvision.transforms.CenterCrop(480)
+        self.crop_transform = torchvision.transforms.CenterCrop(500)
 
     def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
@@ -64,9 +64,7 @@ class ResModel(pl.LightningModule):
         # first convert mask values to probabilities, then 
         # apply thresholding
         prob_mask = logits_mask.sigmoid()
-        pred_mask = (prob_mask > 0.5).byte()
-
-        return pred_mask
+        return prob_mask
 
     
     @torch.no_grad()

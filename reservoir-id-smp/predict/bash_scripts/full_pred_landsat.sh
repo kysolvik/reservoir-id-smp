@@ -1,3 +1,5 @@
+# Note: Used spot vms instead of this script
+# See "spot_vm_startupscript.sh"
 year_start=1984
 year_end=1984
 satellite="landsat5"

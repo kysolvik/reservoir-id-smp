@@ -21,7 +21,7 @@ in_csv = sys.argv[2]
 out_dir = sys.argv[3]
 box_size = 25000
 hydropoly_max_size = 100
-wb_max_size = 100
+wb_max_size = 10000
 prob=True
 
 df = pd.read_csv(in_csv)

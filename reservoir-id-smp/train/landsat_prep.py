@@ -49,27 +49,6 @@ val_frac = 0.20
 test_frac = 0.20
 
 
-# In[6]:
-
-
-remove_cloudy_images = True
-cloudy_csv = './data/cloud_images.csv'
-replace_bad_masks = True
-bad_mask_csv = './data/replace_w_zeromask.csv'
-
-
-# In[7]:
-
-
-if remove_cloudy_images:
-    cloudy_base_list = pd.read_csv(cloudy_csv)['name'].values
-else:
-    cloudy_base_list = np.array([])
-if replace_bad_masks:
-    replace_mask_base_list = pd.read_csv(bad_mask_csv)['name'].values
-else:
-    replace_mask_base_list = np.array([])
-
 
 # ## First round of loading data:
 #  1. Save mins and maxes of every band for every image
@@ -128,12 +107,11 @@ np.save('./data/bands_minmax/landsat_all_imgs_bands_min_max_ls8_10m_v10.npy', ba
 
 
 # ## Second round of loading data:
-# 1. Skip any cloudy images
-# 2. Split into train, val, test
-# 3. Rescale bands using the previously calculated min and max
-# 4. Calc NDs
-# 5. Select 3 bands for feeding into CNN
-# 6. Calc mean and std in running fashion for those bands, print it out
+# 1. Split into train, val, test
+# 2. Rescale bands using the previously calculated min and max
+# 3. Calc NDs
+# 4. Select 3 bands for feeding into CNN
+# 5. Calc mean and std in running fashion for those bands, print it out
 # 
 
 # In[10]:
@@ -260,10 +238,6 @@ def save_mask_images(ann_list, output_dir, resample_size=(166, 166)):
         if len(ar.shape) > 2:
             ar = ar[:,:,0]
             
-        # Replace bad masks
-        if os.path.basename(fp).replace('_mask.png', '') in replace_mask_base_list:
-            ar[:] = 0
-        
         # Replace if only 1 positive pixel
         ar_sum = ar.sum()
         if ar_sum == 1:
@@ -317,13 +291,12 @@ def split_train_test(img_patterns, test_frac, val_frac):
     else:
         return np.arange(total_ims)
 
-# Get train, test, and val lists, skipping cloudy images
-def list_and_split_imgs(input_dir, cloudy_base_list):
+# Get train, test, and val lists
+def list_and_split_imgs(input_dir):
     # First get list of images
     mask_images = glob.glob('{}*mask.png'.format(input_dir))
     mask_images.sort()
     image_patterns = [mi.replace('mask.png', '') for mi in mask_images if os.path.isfile(mi.replace('mask.png', 'ls8_10m.tif'))]
-    image_patterns = np.array([image_pat for image_pat in image_patterns if not os.path.basename(image_pat) in cloudy_base_list])
 
     # No floodplain images in test set
     floodplain_images = np.array([ip for ip in image_patterns if 'floodplains' in ip])
@@ -364,7 +337,7 @@ def list_and_split_imgs(input_dir, cloudy_base_list):
 # In[14]:
 
 
-train_basename_list, val_basename_list, test_basename_list = list_and_split_imgs(input_dir, cloudy_base_list)
+train_basename_list, val_basename_list, test_basename_list = list_and_split_imgs(input_dir)
 
 
 # In[15]:

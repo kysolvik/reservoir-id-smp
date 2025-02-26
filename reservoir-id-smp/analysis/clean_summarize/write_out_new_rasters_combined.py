@@ -22,7 +22,7 @@ out_dir = sys.argv[3]
 box_size = 25000
 hydropoly_max_size = 100
 wb_max_size = 10000
-prob=True
+prob=False
 
 df = pd.read_csv(in_csv)
 fh = rio.open(tif)
@@ -73,7 +73,7 @@ for i in range(start_ind.shape[0]):
                        int(box_size_cols), int(box_size_rows))
     cur_df = df.loc[(df['row_start']==start_ind_row) &
                     (df['col_start']==start_ind_col) &
-                    (df['hydropoly_max']<hydropoly_max_size) @
+                    (df['hydropoly_max']<hydropoly_max_size) &
                     (df['area']<wb_max_size)
                     ]
     label_im, label_values, mask, na_mask = get_labels(fh, rw_window)

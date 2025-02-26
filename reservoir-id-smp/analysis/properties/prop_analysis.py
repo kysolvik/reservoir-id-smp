@@ -8,7 +8,7 @@ import re
 
 # Constants
 PROPERTY_SHP = './data/pa_br_landtenure_studyarea_only_aea.shp'
-RES_CSV_PATTERN = '../remove_bad_water/out/v3_cloudfilt/ls*v3_merged.csv'
+RES_CSV_PATTERN = '../clean_summarize/out/v3_cloudfilt/ls*v3_merged.csv'
 LULC_TIF_PATTERN = '../lulc/in/mato_grosso/aea/*.tif'
 
 def year_from_string(string):

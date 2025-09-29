@@ -36,8 +36,14 @@ TILE_COLS = 640
 
 OUT_ROWS = 500
 OUT_COLS = 500
+# OUT_ROWS = 500
+# OUT_COLS = 500
 
-OVERLAP = 140
+# OVERLAP = 140
+# Tiles overlap by 240 (120 on each side)
+TILE_OVERLAP = 240
+# But predictions are closer togehter
+PRED_OFFSET = TILE_ROWS - OUT_ROWS
 
 BAND_SELECTION = [0, 1, 2, 3, 4, 5, 8, 9, 10, 11]
 # Only including 4 10m spectral, 2 SAR, and SwIR for v6
@@ -81,7 +87,8 @@ def load_model(checkpoint_path, crs):
     """Load the model weights from checkpoint"""
     model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
-        encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs)
+        encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs,
+        center_crop=OUT_ROWS)
     return model
 
 
@@ -159,12 +166,13 @@ def get_indices(src, done_ind, region_gpd=None):
 
     total_cols, total_rows = src.height, src.width
 
-    row_starts = np.arange(0, total_rows - TILE_ROWS, TILE_ROWS - OVERLAP)
-    col_starts = np.arange(0, total_cols - TILE_COLS, TILE_COLS - OVERLAP)
+    row_starts = np.arange(0, total_rows - TILE_ROWS, TILE_ROWS - TILE_OVERLAP)
+    col_starts = np.arange(0, total_cols - TILE_COLS, TILE_COLS - TILE_OVERLAP)
 
     # Add final indices to row_starts and col_starts
     row_starts = np.append(row_starts, total_rows - TILE_ROWS)
     col_starts = np.append(col_starts, total_cols - TILE_COLS)
+    print(row_starts, col_starts)
 
     # Create Nx2 array with row/col start indices
     start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
@@ -219,7 +227,7 @@ def main():
     ds = ResDatasetMultiFile(
             start_inds, fhs=src_list, mean_std=mean_std, bands_minmax=bands_minmax,
             band_selection=BAND_SELECTION, add_nds=args.calc_nds, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
-            overlap=OVERLAP, out_dir=args.out_dir)
+            offset=PRED_OFFSET, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 
     trainer = pl.Trainer()

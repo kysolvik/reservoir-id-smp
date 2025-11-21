@@ -19,7 +19,7 @@ hydropoly_tif = sys.argv[3]
 out_csv = sys.argv[4]
 box_size = 25000
 
-prob=False
+prob=True
 
 fh = rio.open(tif)
 hydropoly_fh = rio.open(hydropoly_tif)
@@ -45,7 +45,7 @@ def get_labels_count(start_ind_col, start_ind_row,
                             int(start_ind_col), int(start_ind_row),
                             int(box_size_cols), int(box_size_rows))
                         )
-        mask = (mask >= cutoff)*(mask!=255)
+        mask = (mask > cutoff)*(mask!=255)
     else:
         mask = (fh.read(1,
                         window=Window(

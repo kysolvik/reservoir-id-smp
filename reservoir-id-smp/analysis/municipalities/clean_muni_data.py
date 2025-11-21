@@ -2,7 +2,7 @@
 """Quick script for preprocessing and cleaning municipality data downloade from IBGE"""
 
 import pandas as pd
-
+import geopandas as  gpd
 
 ### Cattle
 cattle = pd.read_excel('./data/tabela3939.xlsx')
@@ -121,7 +121,146 @@ mb_df_clean = mb_df.drop(
 mb_df_grouped = mb_df_clean.groupby(['cd_muni','class_level_1']).sum()
 mb_df_grouped.to_csv('./data/mb_lulc_cleaned.csv')
 
-### Precip data ###
-# precip = pd.read_parquet('./data/pr_normal.parquet')
-# precip = precip.rename(columns={'code_muni': 'cd_muni'}).set_index('cd_muni')
-# precip.columns = 'precip_' + precip.columns
+
+
+### Bring it all together into full dataframe
+def read_process_csv_to_gdf(csv):
+    temp_df = pd.read_csv(csv)
+    temp_df['satellite'] = os.path.basename(csv)[:8]
+    temp_df['year'] = int(os.path.basename(csv)[9:13])
+    temp_df = temp_df.loc[temp_df['hydropoly_max']<=50]
+    temp_df['area_ha'] = temp_df['area']*100/10000 # HA
+    temp_df['area_km'] = temp_df['area']*100/(1000*1000) # km2
+    temp_df = temp_df.loc[temp_df['area_ha']<=50] # Remove greater than 50 ha
+    temp_df = temp_df.loc[temp_df['area_ha']>=0.05] # Remove less than 0.05 ha
+    temp_gdf = gpd.GeoDataFrame(
+        temp_df, geometry=gpd.points_from_xy(temp_df.longitude, temp_df.latitude),
+        crs='EPSG:4326'
+    )
+    return temp_gdf
+
+def sjoin_summarize(points_gdf, poly_gdf, poly_field):
+    joined_gdf = gpd.sjoin(points_gdf, poly_gdf, predicate='within', how='inner')
+    return joined_gdf[['res_area_ha', poly_field]].groupby(poly_field).agg(['sum', 'count', 'median'])['res_area_ha']
+
+def sjoin_summarize_nogroup(points_gdf, poly_gdf):
+    joined_gdf = gpd.sjoin(points_gdf, poly_gdf, predicate='within', how='inner')
+    return joined_gdf[['area_ha']].agg(['sum', 'count', 'median'])
+
+# Muni stats
+in_csv = '../clean_summarize/out/sentinel_2021_v7_wgs84_bordermerged.csv'
+muni_gdf = gpd.read_file('./data/municipios.shp')
+muni_gdf['center_lon'] = muni_gdf.geometry.centroid.x
+muni_gdf['center_lat'] = muni_gdf.geometry.centroid.y
+res_gdf = read_process_csv_to_gdf(in_csv)
+res_gdf['res_area_ha'] = res_gdf['area_ha']
+joined_gdf = gpd.sjoin(res_gdf, muni_gdf, predicate='within', how='inner')
+muni_res_stats = sjoin_summarize(res_gdf, muni_gdf, 'cd_mun')
+muni_res_stats = muni_res_stats.join(muni_gdf.set_index('cd_mun')[['area_ha', 'center_lon','center_lat']])
+
+# Most predictors
+cattle = pd.read_csv('./data/cattle.csv', index_col=0)
+crops = pd.read_csv('./data/crops.csv', header=[0,1], index_col=0)
+pib = pd.read_csv('./data/pib.csv', header=[0,1], index_col=0)
+pop = pd.read_csv('./data/pop.csv',index_col=0)
+cattle.columns = (pd.MultiIndex.from_product([cattle.columns, ['cattle']]))
+pop.columns = (pd.MultiIndex.from_product([pop.columns, ['pop']]))
+biome_df = pd.read_csv('./data/biome.csv', index_col=0)
+state_df = pd.read_csv('./data/mb_state.csv', index_col=0)
+
+# Irrigation
+irrigation = pd.read_csv('../irrigation/data/center_pivot_area_1985_2022.csv')
+irrigation = irrigation.rename(columns={'mun_código':'cd_mun'})
+irrigation = irrigation.iloc[:-9]
+irrigation['cd_mun'] = irrigation['cd_mun'].astype(int)
+irrigation = irrigation.set_index(
+    'cd_mun'
+    ).drop(
+        columns=['mun_nome','UF_nome','UF_sigla','Região']
+        )
+irrigation.columns = 'irrigation_' + irrigation.columns
+irrigation = irrigation.replace(',','', regex=True).astype(float)
+
+# Precip just needs a little processing
+precip = pd.read_parquet('./data/pr_normal.parquet')
+precip = (precip.set_index('code_muni')*30).reset_index()
+precip['low_rain'] = precip['normal_mean']<100
+precip = precip.rename(columns={'code_muni': 'cd_muni'})
+precip_std = precip[['cd_muni', 'normal_mean']].groupby('cd_muni').std().rename(
+    columns={'normal_mean':'normal_std'})
+precip_min = precip.groupby('cd_muni').min()[['normal_mean']].rename(columns={'normal_mean': 'normal_min'})
+precip_minmax = precip.groupby('cd_muni').max()['normal_mean'] - precip.groupby('cd_muni').min()['normal_mean']
+precip_minmax.name = 'range'
+precip = precip.groupby('cd_muni').mean().join(precip_std).join(precip_minmax).join(precip_min)
+precip['std_div_mean'] = precip['normal_std']/precip['normal_mean']
+precip.columns = 'precip_' + precip.columns
+precip = precip.drop(columns='precip_month')
+
+# Mapbiomas
+def l1_processing(df):
+    df = df.reset_index().set_index('cd_muni').pivot(columns='class_level_1').fillna(0)['2021'].rename(
+        columns={
+            '1. Forest': 'forest',
+            '2. Non Forest Natural Formation': 'natural_nonforest',
+            '3. Farming': 'farming',
+            '4. Non vegetated area': 'non_veg',
+            '5. Water and Marine Environment': 'water',
+            '6. Not Observed': 'na',
+        }
+    )
+    df['natural_total'] = df['forest'] + df['natural_nonforest']
+    return df
+
+# Mapbiomas data
+# Level 1
+mb_df = pd.read_csv('./data/mb_lulc_cleaned.csv', index_col=[0,1])
+mb_df = mb_df.fillna(0)
+# Convert to percentages
+
+mb_df = mb_df.div(mb_df.reset_index().groupby('cd_muni').sum()['1985'], axis=0) * 100
+
+mb_diffs = mb_df[['2021']].copy()
+mb_diffs['2021'] = mb_df['2021'] - mb_df['1985']
+mb_diffs = l1_processing(mb_diffs)
+mb_cur = l1_processing(mb_df['2021'])
+
+# # Level 4
+mb_l4_df = pd.read_csv('./data/mb_lulc_cleaned_level4.csv', index_col=[0,1])
+mb_l4_df = mb_l4_df.fillna(0)
+# Convert to percentages
+mb_l4_df = mb_l4_df.div(mb_l4_df.reset_index().groupby('cd_muni').sum()['1985'], axis=0) * 100
+mb_l4_cur = mb_l4_df['2021']
+mb_l4_diffs = mb_l4_df['2021'] - mb_l4_df['1985']
+mb_l4_diffs = mb_l4_diffs.reset_index().set_index('cd_muni').pivot(columns='class_level_4').fillna(0)[0]
+mb_l4_cur = mb_l4_cur.reset_index().set_index('cd_muni').pivot(columns='class_level_4').fillna(0)['2021']
+
+mb_diffs['soy'] = mb_l4_diffs['3.2.1.1. Soybean']
+mb_diffs['rice'] = mb_l4_diffs['3.2.1.3. Rice']
+mb_diffs['pasture'] = mb_l4_diffs['3.1. Pasture']
+mb_cur['soy'] = mb_l4_cur['3.2.1.1. Soybean']
+mb_cur['rice'] = mb_l4_diffs['3.2.1.3. Rice']
+mb_cur['pasture'] = mb_l4_cur['3.1. Pasture']
+
+mb_cur.columns = mb_cur.columns + '_current'
+mb_diffs.columns = mb_diffs.columns + '_diff'
+
+
+# Merge everything together
+preds_2021 = cattle.join(crops).join(pib).join(pop)['2021'].join(precip).join(mb_diffs).join(mb_cur).join(irrigation[['irrigation_2022']])
+
+full_df = preds_2021.join(muni_res_stats)
+full_df_density = full_df.div((full_df['area_ha']/100), axis=0)
+full_df_density.columns = full_df_density.columns + '_density'
+full_df_percapita = full_df.div((full_df['pop']), axis=0).drop(columns='gdp') # Duplicate
+full_df_percapita.columns = full_df_percapita.columns + '_per_capita'
+
+full_df = full_df.join(full_df_density).join(full_df_percapita).join(biome_df).join(state_df)
+# Remove a bad muni
+full_df = full_df.loc[~full_df['biome'].isna()]
+
+# Drop response vars
+pred_df = full_df.copy()
+for response_var in ['count','median','sum']:
+    pred_df = pred_df.loc[:,~pred_df.columns.str.startswith(response_var)]
+
+full_df.to_csv('./data/full_df.csv')

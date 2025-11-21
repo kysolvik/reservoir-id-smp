@@ -20,9 +20,11 @@ tif = sys.argv[1]
 in_csv = sys.argv[2]
 out_dir = sys.argv[3]
 box_size = 25000
-hydropoly_max_size = 100
-wb_max_size = 10000
+hydropoly_max_size = 50
+wb_max_size = 5000 # 5000 pixels or 50 ha
+wb_min_size = 5 # 5 pixels or 0.05 ha
 prob=True
+cutoff = 62
 
 df = pd.read_csv(in_csv)
 fh = rio.open(tif)
@@ -32,7 +34,7 @@ def get_labels(fh, read_window):
     ar = fh.read(1, window=read_window)
     na_mask = (ar == 255)
     if prob:
-        mask = ((ar > 50)*(~na_mask)).astype(np.uint8)
+        mask = ((ar > 62)*(~na_mask)).astype(np.uint8)
     else:
         mask = (ar == 1).astype(np.uint8)
 
@@ -73,8 +75,9 @@ for i in range(start_ind.shape[0]):
                        int(box_size_cols), int(box_size_rows))
     cur_df = df.loc[(df['row_start']==start_ind_row) &
                     (df['col_start']==start_ind_col) &
-                    (df['hydropoly_max']<hydropoly_max_size) @
-                    (df['area']<wb_max_size)
+                    (df['hydropoly_max']<=hydropoly_max_size) &
+                    (df['area']<=wb_max_size) &
+                    (df['area']>=wb_min_size)
                     ]
     label_im, label_values, mask, na_mask = get_labels(fh, rw_window)
 

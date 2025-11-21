@@ -26,7 +26,7 @@ def prep_run(gdf, out_file):
     res_flow_max = poly_flow_max(gdf, log_every=1000)
     res_flow_max.to_csv(out_file)
 
-# Resid
+# Our reservoirs
 res_gdf_polies = gpd.read_file('../clean_summarize/out_polys/sentinel_2021_v7_aea_cleaned_no0.gpkg')
 prep_run(res_gdf_polies, out_file='./out/flow_acc/res_flow_max.csv')
 
@@ -38,10 +38,10 @@ prep_run(ana_gdf, './out/flow_acc/ana_flow_max.csv')
 # CAR
 car_gdf = gpd.read_file('../compare_previous_results/data/car/full_reservoirs_dissolve_explode.shp')
 car_gdf = car_gdf.loc[~car_gdf.clip_by_rect(-100, -60, -30, 20).is_empty]
-prep_run(car_gdf.iloc, out_file='./out/flow_acc/car_flow_max.csv')
+prep_run(car_gdf, out_file='./out/flow_acc/car_flow_max.csv')
 
 # MapBiomas
-# mb_gdf = gpd.read_file('../compare_previous_results/data/mapbiomas/v3_aea.gpkg')
-# mb_gdf = mb_gdf.loc[mb_gdf['DN']==2]
-# prep_run(car_gdf, out_file='./out/flow_acc/mb_flow_max.csv')
+mb_gdf = gpd.read_file('../compare_previous_results/data/mapbiomas/collection4_v1.gpkg')
+mb_gdf = mb_gdf.loc[mb_gdf['DN']==3]
+prep_run(car_gdf, out_file='./out/flow_acc/mb_flow_max.csv')
 

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Quick script for preprocessing and cleaning municipality data downloade from IBGE"""
+"""Quick script for preprocessing and cleaning municipality"""
 
 import pandas as pd
 import geopandas as  gpd
+import os
 
 ### Cattle
 cattle = pd.read_excel('./data/tabela3939.xlsx')
@@ -182,19 +183,37 @@ irrigation.columns = 'irrigation_' + irrigation.columns
 irrigation = irrigation.replace(',','', regex=True).astype(float)
 
 # Precip just needs a little processing
-precip = pd.read_parquet('./data/pr_normal.parquet')
+precip = pd.read_parquet('./data/pr_indi.parquet')
+precip = precip.groupby(['code_muni', 'month']).mean().reset_index()
 precip = (precip.set_index('code_muni')*30).reset_index()
-precip['low_rain'] = precip['normal_mean']<100
+# Select columns
+precip = precip[['code_muni', 'month','mean','p10','p90']]
+precip['low_rain'] = precip['mean']<100
 precip = precip.rename(columns={'code_muni': 'cd_muni'})
-precip_std = precip[['cd_muni', 'normal_mean']].groupby('cd_muni').std().rename(
-    columns={'normal_mean':'normal_std'})
-precip_min = precip.groupby('cd_muni').min()[['normal_mean']].rename(columns={'normal_mean': 'normal_min'})
-precip_minmax = precip.groupby('cd_muni').max()['normal_mean'] - precip.groupby('cd_muni').min()['normal_mean']
+precip_std = precip[['cd_muni', 'mean']].groupby('cd_muni').std().rename(
+    columns={'mean':'std'})
+precip_min = precip.groupby('cd_muni').min()[['mean']].rename(columns={'mean': 'min'})
+precip_minmax = precip.groupby('cd_muni').max()['mean'] - precip.groupby('cd_muni').min()['mean']
 precip_minmax.name = 'range'
 precip = precip.groupby('cd_muni').mean().join(precip_std).join(precip_minmax).join(precip_min)
-precip['std_div_mean'] = precip['normal_std']/precip['normal_mean']
+precip['std_div_mean'] = precip['std']/precip['mean']
 precip.columns = 'precip_' + precip.columns
 precip = precip.drop(columns='precip_month')
+
+# If using from 1960-1990 (historical normals), uncomment
+# precip = pd.read_parquet('./data/pr_normal.parquet')
+# precip = (precip.set_index('code_muni')*30).reset_index()
+# precip['low_rain'] = precip['normal_mean']<100
+# precip = precip.rename(columns={'code_muni': 'cd_muni'})
+# precip_std = precip[['cd_muni', 'normal_mean']].groupby('cd_muni').std().rename(
+#     columns={'normal_mean':'normal_std'})
+# precip_min = precip.groupby('cd_muni').min()[['normal_mean']].rename(columns={'normal_mean': 'normal_min'})
+# precip_minmax = precip.groupby('cd_muni').max()['normal_mean'] - precip.groupby('cd_muni').min()['normal_mean']
+# precip_minmax.name = 'range'
+# precip = precip.groupby('cd_muni').mean().join(precip_std).join(precip_minmax).join(precip_min)
+# precip['std_div_mean'] = precip['normal_std']/precip['normal_mean']
+# precip.columns = 'precip_' + precip.columns
+# precip = precip.drop(columns='precip_month')
 
 # Mapbiomas
 def l1_processing(df):

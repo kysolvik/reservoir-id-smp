@@ -1,0 +1,3 @@
+python3 make_shps.py "../clean_summarize/out/sentinel_2021_v7_aea_cleaned.csv" center_lon center_lat in/shps_all_brazil/
+python3 raster-buffer-extract/raster-buffer-extract/fraster_extract_wrapper.py ./in/shps_all_brazil/sentinel_2021_v7_aea_cleaned.shp ./in/brazil/brazil_coverage_2021_c10_aea.tif out/lulc_stats_res_sentinel_v7_2021.csv 1000 --stat count_dict --not_latlon --nsample 10000
+python3 process_single_lulc_csv.py out/lulc_stats_res_sentinel_v7_2021.csv lulc_stats_res_sentinel_v7_2021_summarized.csv

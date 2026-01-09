@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-""" Quick script to find reservoirs that overlap hydropolies layer or border"""
+""" Quick script to find reservoirs that overlap hydropolies layer or border
+
+Important: This is a modified version that does both 1-pixel dilation and
+    erosion and calculates areas and counts for both versions
+    """
 
 import rasterio as rio
 from rasterio.windows import Window
@@ -16,7 +20,10 @@ from _border_ar import calc_border_ar
 tif = sys.argv[1]
 cutoff = int(sys.argv[2])
 hydropoly_tif = sys.argv[3]
-out_csv = sys.argv[4]
+out_csv_dilation = sys.argv[4]
+out_csv_erosion = sys.argv[5]
+print(out_csv_erosion)
+print(out_csv_dilation)
 box_size = 25000
 
 prob=True
@@ -38,7 +45,8 @@ def create_com_func(box_width):
     return calc_com
 
 def get_labels_count(start_ind_col, start_ind_row,
-                     box_size_cols, box_size_rows):
+                     box_size_cols, box_size_rows,
+                     morph_transform='none'):
     if prob:
         mask = fh.read(1,
                         window=Window(
@@ -52,7 +60,13 @@ def get_labels_count(start_ind_col, start_ind_row,
                             int(start_ind_col), int(start_ind_row),
                             int(box_size_cols), int(box_size_rows))
                         ) == 1)
-    if mask.sum() > 0:
+
+    # Apply morphological transform
+    if morph_transform=='erosion':
+        mask = ndimage.binary_erosion(mask)
+    elif morph_transform=='dilation':
+        mask = ndimage.binary_dilation(mask)
+    if mask.max() > 0:
         # Get count
         label_im, nb_labels = ndimage.label(mask,
                                         structure = [[1,1,1],[1,1,1],[1,1,1]])
@@ -98,30 +112,9 @@ def convert_row_col_to_xy(affine_transformer, centers,
     x, y = affine_transformer.xy(start_ind_row + centers[:, 0],
                                  start_ind_col + centers[:, 1])
     return x, y
-    
 
-total_rows, total_cols = fh.height, fh.width
-current_row = 0
-current_col = 0
-row_starts = np.arange(0, total_rows, box_size)
-col_starts = np.arange(0, total_cols, box_size)
-
-# Create Nx2 array with row/col start indices
-start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
-
-# Get some affine information
-cur_transform = fh.transform
-affine_transformer = rio.transform.AffineTransformer(cur_transform)
-
-for i in range(start_ind.shape[0]):
-    # For the indices near edge we need to use a smaller box size
-    box_size_rows = min(total_rows - start_ind[i,0], box_size)
-    box_size_cols = min(total_cols - start_ind[i,1], box_size)
-
-    # Get base counts and labeled image
-    start_ind_row, start_ind_col = (start_ind[i,0], start_ind[i,1])
-    sizes, label_im, label_values = get_labels_count(
-            start_ind_col, start_ind_row, box_size_cols, box_size_rows)
+def summarize_and_write(label_im, label_values, sizes, affine_transformer,
+                        start_ind_row, start_ind_col, out_csv):
     if np.max(label_values) > 0:
         centers_of_mass = get_centers(label_im, label_values)
         centers_lon, centers_lat = convert_row_col_to_xy(
@@ -155,3 +148,39 @@ for i in range(start_ind.shape[0]):
 
         out_df.to_csv(out_csv, mode='a', header=(not os.path.isfile(out_csv)),
                       index=False)
+    
+
+total_rows, total_cols = fh.height, fh.width
+current_row = 0
+current_col = 0
+row_starts = np.arange(0, total_rows, box_size)
+col_starts = np.arange(0, total_cols, box_size)
+
+# Create Nx2 array with row/col start indices
+start_ind = np.array(np.meshgrid(row_starts, col_starts)).T.reshape(-1, 2)
+
+# Get some affine information
+cur_transform = fh.transform
+affine_transformer = rio.transform.AffineTransformer(cur_transform)
+
+for i in range(start_ind.shape[0]):
+    # For the indices near edge we need to use a smaller box size
+    box_size_rows = min(total_rows - start_ind[i,0], box_size)
+    box_size_cols = min(total_cols - start_ind[i,1], box_size)
+
+    # Get base counts and labeled image
+    start_ind_row, start_ind_col = (start_ind[i,0], start_ind[i,1])
+
+    # Dilation
+    sizes, label_im, label_values = get_labels_count(
+            start_ind_col, start_ind_row, box_size_cols, box_size_rows,
+            morph_transform='dilation')
+    summarize_and_write(label_im, label_values, sizes, affine_transformer,
+                        start_ind_row, start_ind_col, out_csv_dilation)
+
+    # Erosion
+    sizes, label_im, label_values = get_labels_count(
+            start_ind_col, start_ind_row, box_size_cols, box_size_rows,
+            morph_transform='erosion')
+    summarize_and_write(label_im, label_values, sizes, affine_transformer,
+                        start_ind_row, start_ind_col, out_csv_erosion)

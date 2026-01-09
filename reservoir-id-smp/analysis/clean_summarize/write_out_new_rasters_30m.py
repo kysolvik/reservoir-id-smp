@@ -20,9 +20,9 @@ tif = sys.argv[1]
 in_csv = sys.argv[2]
 out_dir = sys.argv[3]
 box_size = 25000
-hydropoly_max_size = 100 # 100/9
-wb_max_size = 10000
-wb_min_size=100
+hydropoly_max_size = 500 # 100/9 
+wb_max_size = 50000
+wb_min_size=100 # 10 ha
 prob=True
 
 df = pd.read_csv(in_csv)

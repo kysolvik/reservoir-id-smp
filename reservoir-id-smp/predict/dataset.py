@@ -11,15 +11,6 @@ import rasterio
 
 
 class ResDataset(BaseDataset):
-    """CamVid Dataset. Read images, apply augmentation and preprocessing transformations.
-
-    Args:
-        fh (rasterio filehandle):
-        augmentation (albumentations.Compose): data transfromation pipeline 
-            (e.g. flip, scale, etc.)
-
-    """
-
 
     def __init__(
             self,
@@ -140,7 +131,7 @@ class ResDataset(BaseDataset):
         nd_list += [self.calc_nd(img, 2, 4)]
         # Add NDVI band
         nd_list += [self.calc_nd(img, 4, 3)]
-        
+
         return np.stack(nd_list, axis=2)
 
     def calc_nd(self, img, band1, band2):

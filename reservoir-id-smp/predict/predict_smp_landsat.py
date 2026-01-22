@@ -245,7 +245,7 @@ def main():
     # Create dataset and loader
     ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
                     band_selection=BAND_SELECTION, add_nds=args.calc_nds, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
-                    overlap=OVERLAP, out_dir=args.out_dir)
+                    offset=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 
     trainer = pl.Trainer()

@@ -54,7 +54,7 @@ if [[ ! -f ~/already_run.foo ]]; then
     # Get code
     git clone https://github.com/kysolvik/reservoir-id-smp.git
     cd reservoir-id-smp/reservoir-id-smp/predict/
-    git checkout quantized-prediction
+    git checkout landsat-pred-update
 
     # Get data files
     gsutil cp $model_gs_path ./model.ckpt

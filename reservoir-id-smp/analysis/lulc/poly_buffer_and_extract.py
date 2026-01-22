@@ -8,7 +8,12 @@ import geopandas as gpd
 import dask_geopandas as dgpd
 import exactextract
 
-BUFFER_SIZE = 30
+BUFFER_SIZE = 1000
+if BUFFER_SIZE >=500:
+    BUFFER_RESOLUTION=4
+else:
+    # Higher precision for smaller buffers
+    BUFFER_RESOLUTION=16
 
 IN_GPKG = '../clean_summarize/out_polys/sentinel_2021_v7_aea_cleaned_polygons.gpkg'
 IN_MB_TIFF = './in/brazil/brazil_coverage_2021_c10_aea.tif'
@@ -23,7 +28,7 @@ in_gdf = gpd.read_file(IN_GPKG)
 if not os.path.isfile(OUT_GPKG):
     # Buffer in parallel using dask
     dgdf = dgpd.from_geopandas(in_gdf, npartitions=32)
-    buffered_dask = dgdf.buffer(BUFFER_SIZE)
+    buffered_dask = dgdf.buffer(BUFFER_SIZE, resolution=BUFFER_RESOLUTION)
     buffered_gdf = buffered_dask.compute()
     #  Write out
     buffered_gdf.to_file(OUT_GPKG)
@@ -96,6 +101,11 @@ print('Totals')
 print(frac_df[['natural_area', 'water_area','other_area']].sum(axis=0))
 print('Area (km2) totals')
 print(frac_df[['natural_area', 'water_area','other_area']].sum(axis=0)/(1000*1000))
+
+print('Mean totals, all reservoirs')
+print(frac_df[['natural', 'water','other']].mean(axis=0))
+print('Mean totals, >1 ha reservoirs')
+print(frac_df.loc[frac_df['og_area_ha']>1,['natural', 'water','other']].mean(axis=0))
 
 print('Meeting 0.5 requirement:')
 print((frac_df.loc[frac_df['og_area_ha']>1, 'natural_no_water'] > 0.5).mean())

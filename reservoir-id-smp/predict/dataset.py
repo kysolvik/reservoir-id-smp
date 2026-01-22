@@ -29,7 +29,7 @@ class ResDataset(BaseDataset):
             band_selection,
             tile_rows,
             tile_cols,
-            overlap,
+            offset,
             out_dir,
             add_nds,
             mean_std=None,
@@ -38,7 +38,7 @@ class ResDataset(BaseDataset):
         self.start_inds = start_inds
         self.fh = fh
         self.band_selection = band_selection
-        self.overlap = overlap
+        self.offset = offset
         self.tile_rows = tile_rows
         self.tile_cols = tile_cols
         self.out_dir = out_dir
@@ -81,9 +81,9 @@ class ResDataset(BaseDataset):
             src_transform (tuple): Geo transform/affine of src image
 
         """
-        if self.overlap > 0:
-            indice_pair = (indice_pair[0]+(self.overlap/2),
-                           indice_pair[1]+(self.overlap/2))
+        if self.offset > 0:
+            indice_pair = (indice_pair[0]+(self.offset/2),
+                           indice_pair[1]+(self.offset/2))
         new_ul = [self.src_transform[2] + indice_pair[0]*self.src_transform[0] + indice_pair[1]*self.src_transform[1],
                   self.src_transform[5] + indice_pair[0]*self.src_transform[3] + indice_pair[1]*self.src_transform[4]]
 

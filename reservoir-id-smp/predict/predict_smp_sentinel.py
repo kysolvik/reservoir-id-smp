@@ -88,7 +88,7 @@ def load_model(checkpoint_path, crs):
     model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
         encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs,
-        center_crop=OUT_ROWS)
+        center_crop=OUT_ROWS, prob_scale=100)
     return model
 
 

@@ -87,7 +87,7 @@ def load_model(checkpoint_path, crs, threshold):
     model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=6, out_classes=1, arch='MAnet',
         encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs,
-        center_crop=OUT_ROWS, threshold=threshold)
+        center_crop=OUT_ROWS, threshold=threshold, prob_scale=254)
     return model
 
 
@@ -95,7 +95,7 @@ def load_model_quantized(checkpoint_path, crs, threshold):
     """Load the model weights from checkpoint"""
     model = ResModel(arch='MAnet', encoder_name="resnet34",
                      in_channels=6, out_classes=1, weights=None, crs=crs,
-                     center_crop=OUT_ROWS, threshold=threshold)
+                     center_crop=OUT_ROWS, threshold=threshold, prob_scale=254)
     model.model = nc_load(checkpoint_path, model.model)
     return model
 

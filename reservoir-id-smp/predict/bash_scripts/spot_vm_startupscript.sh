@@ -80,7 +80,7 @@ fi
 # Run
 tsp python3 -u predict_smp_landsat.py vrts/ls_10m_${satellite}_${y}.vrt model.ckpt mean_std.npy bands_minmax.npy \
     $out_path --quantized --region_shp shp/Brazil_10kmbuffer_noremoteislands_noholes.shp
-tsp bash bash_scripts/zip_all.sh $satellite
+tsp bash bash_scripts/zip_landsat_all.sh $satellite
 
 # Prep logs/shutdown
 mkdir -p logs

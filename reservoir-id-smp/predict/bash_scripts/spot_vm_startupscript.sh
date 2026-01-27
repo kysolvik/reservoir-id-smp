@@ -10,6 +10,11 @@ satellite=${hostname_to_parse:3:8}
 y=${hostname_to_parse:12:4}
 vm_name="rp-${satellite}-${y}"
 touch "~/${satellite}_${year}.foo"
+# Landsat 9
+if [ $satellite = "landsat9" ]; then
+    mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls9_v9.npy
+    bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls9_10m_v9.npy
+fi
 # Landsat 8
 if [ $satellite = "landsat8" ]; then
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy

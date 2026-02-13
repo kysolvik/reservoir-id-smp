@@ -18,14 +18,17 @@ comp_ls_name = os.path.basename(comp_tif)[:3]
 cutoff_dict = {
         'ls5': 9,
         'ls7': 1,
-        'ls8': 179
+        'ls8': 179,
+        'ls9': 195
         }
 base_cutoff = cutoff_dict[base_ls_name]
 comp_cutoff = cutoff_dict[comp_ls_name]
 box_size = 10000
 
-out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace('.tif', '_overlaps.csv'))
-out_csv_comp_overlaps = os.path.join('./out/', os.path.basename(comp_tif).replace('.tif', '_overlaps.csv'))
+out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace(
+    '.tif', '_{}_overlaps.csv'.format(comp_ls_name)))
+out_csv_comp_overlaps = os.path.join('./out/', os.path.basename(comp_tif).replace(
+    '.tif', '_{}_overlaps.csv'.format(base_ls_name)))
 fh_base = rio.open(base_tif)
 fh_comp = rio.open(comp_tif)
 

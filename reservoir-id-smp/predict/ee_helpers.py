@@ -7,12 +7,11 @@ import numpy as np
 
 import ee 
 
-ee.Initialize(project='ksolvik-misc',
-              opt_url='https://earthengine-highvolume.googleapis.com')
+ee.Initialize(project='ksolvik-misc')
 
 brazilBuffer = ee.FeatureCollection("users/kyso1389/Brazil_aea_10kmbuffer_noremoteislands_noholes")
  
-RESOLUTION = 0.00026949458523585647
+RESOLUTION = 0.000089831528412
 # Name conversion lookup table
 LS_NAME_DICT = {
      'ls5': 'LT05',
@@ -108,9 +107,8 @@ def createAnnualMosaic(ls_name, centerYear):
     lsExportBands = EXPORT_BANDS_DICT[ls_name]
     lsCol = filteredCloudScoreCol(SR, TOA, centerYear)
     lsComposite = SRComposite(lsCol, True, 50, 20, 100)
-    # lsClipClouds = lsComposite.select(['cloud']).clip(brazilBuffer).toUint8()
     lsClipComposite = lsComposite.select(lsExportBands).multiply(65534).round().toUint16()
-    return lsClipComposite#.addBands(lsClipClouds.select(['cloud']))
+    return lsClipComposite.resample('bicubic')
 
 
 def get_patch(im, lon, lat, w, h):

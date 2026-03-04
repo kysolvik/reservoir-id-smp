@@ -23,7 +23,7 @@ from torch.utils.data import DataLoader
 import affine
 import torch
 from neural_compressor.utils.pytorch import load as nc_load
-from predict.dataset_ee import ResDatasetEE
+from dataset_ee import ResDatasetEE
 from model import ResModel
 
 TILE_ROWS = 640

@@ -5,12 +5,12 @@ import io
 import logging
 import numpy as np
 
-import ee 
+import ee
 
 ee.Initialize(project='ksolvik-misc')
 
 brazilBuffer = ee.FeatureCollection("users/kyso1389/Brazil_aea_10kmbuffer_noremoteislands_noholes")
- 
+
 RESOLUTION = 0.000089831528412
 # Name conversion lookup table
 LS_NAME_DICT = {
@@ -107,12 +107,18 @@ def createAnnualMosaic(ls_name, centerYear):
     lsExportBands = EXPORT_BANDS_DICT[ls_name]
     lsCol = filteredCloudScoreCol(SR, TOA, centerYear)
     lsComposite = SRComposite(lsCol, True, 50, 20, 100)
+    print(lsExportBands)
+    print(ls_code)
+    print(ls_name)
+    print(centerYear)
     lsClipComposite = lsComposite.select(lsExportBands).multiply(65534).round().toUint16()
     return lsClipComposite.resample('bicubic')
 
 
-def get_patch(im, lon, lat, w, h):
+def get_patch(im, lon, lat, w, h, ls_name):
     # Make a request object.
+    print('lat', lat)
+    print('lon', lon)
     request = {
         'expression': im,
         'fileFormat': 'NPY',
@@ -139,7 +145,12 @@ def get_patch(im, lon, lat, w, h):
             raise RuntimeError("Empty EE response")
 
     try:
-        arr = np.load(io.BytesIO(raw))
+        x = np.load(io.BytesIO(raw))
+        arr = np.array([x[band] for band in EXPORT_BANDS_DICT[ls_name]])
+        # arr = arr.view(np.float64).reshape(arr.shape + (-1,))
+        print(arr)
+        with open('output_file_test.bin', 'wb') as f:
+            f.write(raw)
     except Exception as e:
         raise RuntimeError("Failed to load NPY for coords") from e
 

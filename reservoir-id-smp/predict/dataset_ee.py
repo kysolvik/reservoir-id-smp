@@ -1,13 +1,9 @@
 from torch.utils.data import Dataset as BaseDataset
 from torch.utils.data.dataloader import default_collate
-import torch
-import os
-from skimage import io
 import numpy as np
 import albumentations as albu
 import affine
 import time
-import rasterio
 import ee_helpers
 
 
@@ -101,9 +97,6 @@ class ResDatasetEE(BaseDataset):
         image = self.load_single_image_ee([lon, lat])
         image = self.preprocess(image, self.bands_minmax, self.mean_std, self.band_selection)
 
-        # if self.mean_std is not None:
-        #    image = self.normalize_image(image, self.mean_std)
-
         # apply preprocessing
         if self.preprocessing_to_tensor:
             sample = self.preprocessing_to_tensor(image=image)
@@ -168,9 +161,6 @@ class ResDatasetEE(BaseDataset):
             print('Error: overflow')
         return img.astype(np.uint8)
 
-#    def normalize_image(self, ar, mean_std):
-#        return (ar - mean_std[0])/mean_std[1]
-
     def preprocess(self, img, bands_minmax, mean_std, band_selection):
         """Prep the input images"""
         img = self.rescale_to_minmax_uint8(img, bands_minmax)
@@ -180,6 +170,7 @@ class ResDatasetEE(BaseDataset):
         else:
             img = img[:,:, band_selection]
         img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
+        print(img)
 
         return img
 
@@ -198,19 +189,22 @@ class ResDatasetEE(BaseDataset):
 
         # Try/except
         try:
-            base_img = ee_helpers.get_patch(self.ee_im, 
+            base_img = ee_helpers.get_patch(self.ee_im,
                                             lon=lon,
                                             lat=lat,
                                             w=self.tile_cols,
-                                            h=self.tile_rows
+                                            h=self.tile_rows,
+                                            ls_name=self.ls_name
             )
 
-        except: #rasterio.errors.RasterioIOError:
+        except:
             time.sleep(600)
-            base_img = ee_helpers.get_patch(self.ee_im, 
+            base_img = ee_helpers.get_patch(self.ee_im,
                                             lon=lon,
                                             lat=lat,
                                             w=self.tile_cols,
-                                            h=self.tile_rows
+                                            h=self.tile_rows,
+                                            ls_name=self.ls_name
             )
         return np.moveaxis(base_img, 0, 2)
+

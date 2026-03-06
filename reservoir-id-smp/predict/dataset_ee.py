@@ -170,7 +170,6 @@ class ResDatasetEE(BaseDataset):
         else:
             img = img[:,:, band_selection]
         img = (img - mean_std[0, band_selection])/mean_std[1, band_selection]
-        print(img)
 
         return img
 

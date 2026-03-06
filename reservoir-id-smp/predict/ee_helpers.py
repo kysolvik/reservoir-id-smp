@@ -106,19 +106,14 @@ def createAnnualMosaic(ls_name, centerYear):
     TOA = ee.ImageCollection(f"LANDSAT/{ls_code}/C02/T1_TOA")
     lsExportBands = EXPORT_BANDS_DICT[ls_name]
     lsCol = filteredCloudScoreCol(SR, TOA, centerYear)
+    default_proj = lsCol.first().projection()
     lsComposite = SRComposite(lsCol, True, 50, 20, 100)
-    print(lsExportBands)
-    print(ls_code)
-    print(ls_name)
-    print(centerYear)
     lsClipComposite = lsComposite.select(lsExportBands).multiply(65534).round().toUint16()
-    return lsClipComposite.resample('bicubic')
+    return lsClipComposite.setDefaultProjection(default_proj).resample('bicubic')
 
 
 def get_patch(im, lon, lat, w, h, ls_name):
     # Make a request object.
-    print('lat', lat)
-    print('lon', lon)
     request = {
         'expression': im,
         'fileFormat': 'NPY',
@@ -132,7 +127,7 @@ def get_patch(im, lon, lat, w, h, ls_name):
                 'shearX': 0,
                 'translateX': lon,
                 'shearY': 0,
-                'scaleY': RESOLUTION,
+                'scaleY': -RESOLUTION,
                 'translateY': lat
             },
             'crsCode': 'EPSG:4326',
@@ -148,7 +143,6 @@ def get_patch(im, lon, lat, w, h, ls_name):
         x = np.load(io.BytesIO(raw))
         arr = np.array([x[band] for band in EXPORT_BANDS_DICT[ls_name]])
         # arr = arr.view(np.float64).reshape(arr.shape + (-1,))
-        print(arr)
         with open('output_file_test.bin', 'wb') as f:
             f.write(raw)
     except Exception as e:

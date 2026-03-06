@@ -23,7 +23,6 @@ class ResModel(pl.LightningModule):
 
     def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
-
         if self.threshold is not None:
             preds[preds >= self.threshold] = 1
             preds[preds < self.threshold] = 0
@@ -39,6 +38,20 @@ class ResModel(pl.LightningModule):
             )
             pred = preds[i]
             new_dataset.write(pred.astype('uint8'), 1)
+
+    def write_inputs(self, inputs, outfile, geo_transform):
+        """Write a batch of inputs to tiffs"""
+
+        for i in range(inputs.shape[0]):
+            new_dataset = rasterio.open(
+                outfile[i], 'w', driver='GTiff',
+                height=inputs.shape[2], width=inputs.shape[3],
+                count=6, dtype='float64', compress='lzw',
+                crs=self.crs, nodata=255,
+                transform=geo_transform[i]
+            )
+            ar = np.array(inputs[i])
+            new_dataset.write(ar.astype('float'))
 
     def forward(self, image):
         # normalize image here
@@ -72,6 +85,8 @@ class ResModel(pl.LightningModule):
     @torch.no_grad()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         preds = np.vstack(self(batch['image']).sigmoid())
-        print(preds.max())
+#         self.write_inputs(batch['image'],
+#                           [of.replace('.tif','_inputs.tif') for of in batch['outfile']],
+#                           batch['geo_transform'])
         self.write_imgs(preds, batch['outfile'], batch['geo_transform'])
         return

@@ -177,6 +177,9 @@ def geofilter_indices(src_transform, start_ind, region_gpd):
 def get_indices(src, done_ind, region_gpd=None):
     """Get the indices for the tiles in the larger vrt"""
 
+    # NOTE: These are backward. Height should be rows, width should be cols
+    # But they're backward in the rest of this module too (NOT in the dataset)
+    # and so leaving for now
     total_cols, total_rows = src.height, src.width
 
     row_starts = np.arange(0, total_rows - TILE_ROWS, TILE_ROWS - OVERLAP)

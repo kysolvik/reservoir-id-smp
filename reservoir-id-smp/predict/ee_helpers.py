@@ -7,7 +7,7 @@ import numpy as np
 
 import ee
 
-ee.Initialize(project='ksolvik-misc')
+ee.Initialize(project='mmacedo-reservoirid')
 
 brazilBuffer = ee.FeatureCollection("users/kyso1389/Brazil_aea_10kmbuffer_noremoteislands_noholes")
 

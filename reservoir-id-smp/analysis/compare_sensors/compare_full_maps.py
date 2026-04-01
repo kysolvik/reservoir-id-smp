@@ -19,7 +19,7 @@ cutoff_dict = {
         'ls5': 9,
         'ls7': 1,
         'ls8': 179,
-        'ls9': 195
+        'ls9': 179
         }
 base_cutoff = cutoff_dict[base_ls_name]
 comp_cutoff = cutoff_dict[comp_ls_name]

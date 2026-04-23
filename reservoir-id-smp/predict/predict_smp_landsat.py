@@ -87,7 +87,7 @@ def load_model(checkpoint_path, crs, threshold):
     model = ResModel.load_from_checkpoint(
         checkpoint_path, in_channels=6, out_classes=1, arch='MAnet',
         encoder_name='resnet34', map_location=torch.device('cpu'), crs=crs,
-        threshold=threshold)
+        center_crop=OUT_ROWS, threshold=threshold, prob_scale=254)
     return model
 
 
@@ -95,7 +95,7 @@ def load_model_quantized(checkpoint_path, crs, threshold):
     """Load the model weights from checkpoint"""
     model = ResModel(arch='MAnet', encoder_name="resnet34",
                      in_channels=6, out_classes=1, weights=None, crs=crs,
-                     threshold=threshold)
+                     center_crop=OUT_ROWS, threshold=threshold, prob_scale=254)
     model.model = nc_load(checkpoint_path, model.model)
     return model
 
@@ -177,6 +177,9 @@ def geofilter_indices(src_transform, start_ind, region_gpd):
 def get_indices(src, done_ind, region_gpd=None):
     """Get the indices for the tiles in the larger vrt"""
 
+    # NOTE: These are backward. Height should be rows, width should be cols
+    # But they're backward in the rest of this module too (NOT in the dataset)
+    # and so leaving for now
     total_cols, total_rows = src.height, src.width
 
     row_starts = np.arange(0, total_rows - TILE_ROWS, TILE_ROWS - OVERLAP)
@@ -245,7 +248,7 @@ def main():
     # Create dataset and loader
     ds = ResDataset(start_inds, fh=src_list[0], mean_std=mean_std, bands_minmax=bands_minmax,
                     band_selection=BAND_SELECTION, add_nds=args.calc_nds, tile_rows=TILE_ROWS, tile_cols=TILE_COLS,
-                    overlap=OVERLAP, out_dir=args.out_dir)
+                    offset=OVERLAP, out_dir=args.out_dir)
     dl = DataLoader(ds, batch_size=4, shuffle=False, num_workers=1, collate_fn=ds.collate)
 
     trainer = pl.Trainer()

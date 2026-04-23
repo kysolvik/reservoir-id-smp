@@ -1,21 +1,21 @@
 from torch.utils.data import Dataset as BaseDataset
 from torch.utils.data.dataloader import default_collate
-import torch
-import os
-from skimage import io
 import numpy as np
 import albumentations as albu
 import affine
 import time
-import rasterio
+import ee_helpers
 
 
-class ResDataset(BaseDataset):
+SRC_TRANSFORM = affine.Affine(8.9831528412e-05, 0.0, -74.05396791935839, 0.0, -8.9831528412e-05, 5.31757732434834)
+
+class ResDatasetEE(BaseDataset):
 
     def __init__(
             self,
             start_inds,
-            fh,
+            ls_name,
+            year,
             bands_minmax,
             band_selection,
             tile_rows,
@@ -27,17 +27,20 @@ class ResDataset(BaseDataset):
     ):
         self.ids = np.arange(start_inds.shape[0])
         self.start_inds = start_inds
-        self.fh = fh
+        self.ls_name = ls_name
+        self.year = year
         self.band_selection = band_selection
         self.offset = offset
         self.tile_rows = tile_rows
         self.tile_cols = tile_cols
         self.out_dir = out_dir
         self.bands_minmax = bands_minmax
-        self.src_transform = self.fh.transform
         self.preprocessing_to_tensor = self.get_preprocessing_to_tensor()
         self.mean_std = mean_std
         self.add_nds = add_nds
+
+        # Get im
+        self.ee_im = ee_helpers.createAnnualMosaic(self.ls_name, self.year)
 
 
     def to_tensor(self, x, **kwargs):
@@ -69,36 +72,36 @@ class ResDataset(BaseDataset):
 
         Args:
             indice_pair (tuple): Row, Col indices of upper left corner of tile.
-            src_transform (tuple): Geo transform/affine of src image
 
         """
         if self.offset > 0:
             indice_pair = (indice_pair[0]+(self.offset/2),
                            indice_pair[1]+(self.offset/2))
-        new_ul = [self.src_transform[2] + indice_pair[0]*self.src_transform[0] + indice_pair[1]*self.src_transform[1],
-                  self.src_transform[5] + indice_pair[0]*self.src_transform[3] + indice_pair[1]*self.src_transform[4]]
+        new_ul = [SRC_TRANSFORM[2] + indice_pair[0]*SRC_TRANSFORM[0] + indice_pair[1]*SRC_TRANSFORM[1],
+                  SRC_TRANSFORM[5] + indice_pair[0]*SRC_TRANSFORM[3] + indice_pair[1]*SRC_TRANSFORM[4]]
 
-        new_affine = affine.Affine(self.src_transform[0], self.src_transform[1], new_ul[0],
-                                   self.src_transform[3], self.src_transform[4], new_ul[1])
+        new_affine = affine.Affine(SRC_TRANSFORM[0], SRC_TRANSFORM[1], new_ul[0],
+                                   SRC_TRANSFORM[3], SRC_TRANSFORM[4], new_ul[1])
 
         return new_affine
 
     def __getitem__(self, i):
 
-        # read data
-        image = self.load_single_image(self.start_inds[i])
-        image = self.preprocess(image, self.bands_minmax, self.mean_std, self.band_selection)
+        # Get geo transform information
+        geo_transform = self.get_geotransform((self.start_inds[i,0], self.start_inds[i,1]))
+        # Get un-offset lon, lat starts for computePixels()
+        lon, lat = (SRC_TRANSFORM[2] + self.start_inds[i, 0]*SRC_TRANSFORM[0] + self.start_inds[i, 1]*SRC_TRANSFORM[1],
+                    SRC_TRANSFORM[5] + self.start_inds[i, 0]*SRC_TRANSFORM[3] + self.start_inds[i, 1]*SRC_TRANSFORM[4])
 
-        # if self.mean_std is not None:
-        #    image = self.normalize_image(image, self.mean_std)
+        # read data
+        image = self.load_single_image_ee([lon, lat])
+        image = self.preprocess(image, self.bands_minmax, self.mean_std, self.band_selection)
 
         # apply preprocessing
         if self.preprocessing_to_tensor:
             sample = self.preprocessing_to_tensor(image=image)
             image = sample['image']
 
-        # Get geo transform information
-        geo_transform = self.get_geotransform((self.start_inds[i,0], self.start_inds[i,1]))
 
         # Get output filename
         outfile = '{}/pred_{}-{}.tif'.format(
@@ -158,9 +161,6 @@ class ResDataset(BaseDataset):
             print('Error: overflow')
         return img.astype(np.uint8)
 
-#    def normalize_image(self, ar, mean_std):
-#        return (ar - mean_std[0])/mean_std[1]
-
     def preprocess(self, img, bands_minmax, mean_std, band_selection):
         """Prep the input images"""
         img = self.rescale_to_minmax_uint8(img, bands_minmax)
@@ -182,16 +182,28 @@ class ResDataset(BaseDataset):
         return batch_out
 
 
-    def load_single_image(self, start_inds):
+    def load_single_image_ee(self, start_inds):
         """Load single tile from list of src"""
-        col, row = start_inds[0], start_inds[1]
+        lon, lat = start_inds[0], start_inds[1]
 
         # Try/except
         try:
-            base_img = self.fh.read(window=((row, row + self.tile_rows),
-                                            (col, col + self.tile_cols)))
-        except: #rasterio.errors.RasterioIOError:
+            base_img = ee_helpers.get_patch(self.ee_im,
+                                            lon=lon,
+                                            lat=lat,
+                                            w=self.tile_cols,
+                                            h=self.tile_rows,
+                                            ls_name=self.ls_name
+            )
+
+        except:
             time.sleep(600)
-            base_img = self.fh.read(window=((row, row + self.tile_rows),
-                                            (col, col + self.tile_cols)))
+            base_img = ee_helpers.get_patch(self.ee_im,
+                                            lon=lon,
+                                            lat=lat,
+                                            w=self.tile_cols,
+                                            h=self.tile_rows,
+                                            ls_name=self.ls_name
+            )
         return np.moveaxis(base_img, 0, 2)
+

@@ -7,8 +7,9 @@ import pytorch_lightning as pl
 
 class ResModel(pl.LightningModule):
 
-    def __init__(self, arch, encoder_name, in_channels, out_classes, **kwargs):
+    def __init__(self, arch, encoder_name, in_channels, out_classes, center_crop, **kwargs):
         super().__init__()
+        self.center_crop = center_crop
         self.model = smp.MAnet(encoder_name=encoder_name, in_channels=in_channels, classes=out_classes,
                                       aux_params=dict(
                                           classes=1,
@@ -16,8 +17,7 @@ class ResModel(pl.LightningModule):
         )
 
         self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
-        # self.crop_transform = torchvision.transforms.CenterCrop(500)
-        self.crop_transform = torchvision.transforms.CenterCrop(480)
+        self.crop_transform = torchvision.transforms.CenterCrop(self.center_crop)
 
     def forward(self, image):
         mask = self.model(image)[0]

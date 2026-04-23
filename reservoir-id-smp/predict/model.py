@@ -9,7 +9,7 @@ import affine
 class ResModel(pl.LightningModule):
 
     def __init__(self, arch, encoder_name, in_channels, out_classes, crs,
-            center_crop=500, threshold=None, **kwargs):
+            center_crop=500, threshold=None, prob_scale=254, **kwargs):
         super().__init__()
         self.model = smp.MAnet(encoder_name=encoder_name, in_channels=in_channels, classes=out_classes,
                                aux_params=dict(
@@ -17,18 +17,17 @@ class ResModel(pl.LightningModule):
                                    dropout=None)
                                )
         self.threshold = threshold
+        self.prob_scale = prob_scale
         self.crs = crs
         self.crop_transform = torchvision.transforms.CenterCrop(center_crop)
 
     def write_imgs(self, preds, outfile, geo_transform):
         """Write a batch of predictions to tiffs"""
-
         if self.threshold is not None:
             preds[preds >= self.threshold] = 1
             preds[preds < self.threshold] = 0
         else:
-#             preds = np.round(preds*254).astype(np.uint8)
-            preds = np.round(preds*100).astype(np.uint8)
+            preds = np.round(preds*self.prob_scale).astype(np.uint8)
         for i in range(preds.shape[0]):
             new_dataset = rasterio.open(
                 outfile[i], 'w', driver='GTiff',
@@ -52,9 +51,9 @@ class ResModel(pl.LightningModule):
         # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]
         assert image.ndim == 4
 
-        # Check that image dimensions are divisible by 32, 
-        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of 
-        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have 
+        # Check that image dimensions are divisible by 32,
+        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of
+        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have
         # following shapes of features in encoder and decoder: 84, 42, 21, 10, 5 -> 5, 10, 20, 40, 80
         # and we will get an error trying to concat these features
         h, w = image.shape[2:]
@@ -63,14 +62,14 @@ class ResModel(pl.LightningModule):
         logits_mask = self.forward(image)
 
         # Lets compute metrics for some threshold
-        # first convert mask values to probabilities, then 
+        # first convert mask values to probabilities, then
         # apply thresholding
         prob_mask = logits_mask.sigmoid()
         return prob_mask
 
-    
+
     @torch.no_grad()
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         preds = np.vstack(self(batch['image']).sigmoid())
         self.write_imgs(preds, batch['outfile'], batch['geo_transform'])
-        return 
+        return

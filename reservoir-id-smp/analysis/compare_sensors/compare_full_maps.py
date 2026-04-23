@@ -18,14 +18,17 @@ comp_ls_name = os.path.basename(comp_tif)[:3]
 cutoff_dict = {
         'ls5': 9,
         'ls7': 1,
-        'ls8': 179
+        'ls8': 179,
+        'ls9': 179
         }
 base_cutoff = cutoff_dict[base_ls_name]
-comp_cutoff = cutoff_dict[comp_ls_name] 
+comp_cutoff = cutoff_dict[comp_ls_name]
 box_size = 10000
 
-out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace('.tif', '_overlaps.csv'))
-out_csv_comp_overlaps = os.path.join('./out/', os.path.basename(comp_tif).replace('.tif', '_overlaps.csv'))
+out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace(
+    '.tif', '_{}_overlaps.csv'.format(comp_ls_name)))
+out_csv_comp_overlaps = os.path.join('./out/', os.path.basename(comp_tif).replace(
+    '.tif', '_{}_overlaps.csv'.format(base_ls_name)))
 fh_base = rio.open(base_tif)
 fh_comp = rio.open(comp_tif)
 
@@ -73,8 +76,11 @@ for i in range(start_ind.shape[0]):
                                 int(start_ind_col), int(start_ind_row),
                                 int(box_size_cols), int(box_size_rows))
                             ))
-    base_ar = (base_ar >= base_cutoff)*(base_ar!=255)
-    comp_ar = (comp_ar >= comp_cutoff)*(comp_ar!=255)
+    comp_mask = comp_ar != 255
+    base_mask = base_ar != 255
+    full_mask = comp_mask*base_mask
+    base_ar = (base_ar >= base_cutoff)*full_mask
+    comp_ar = (comp_ar >= comp_cutoff)*full_mask
 
     tp, fp, fn = calc_stats(base_ar, comp_ar)
     out_dict = {
@@ -83,6 +89,9 @@ for i in range(start_ind.shape[0]):
             'col_start': start_ind_col,
             'box_rows': box_size_rows,
             'box_cols': box_size_cols,
+            'base_valid_pixels': np.sum(base_mask),
+            'comp_valid_pixels': np.sum(comp_mask),
+            'total_valid_pixels': np.sum(full_mask),
             'tp': tp,
             'fp': fp,
             'fn': fn

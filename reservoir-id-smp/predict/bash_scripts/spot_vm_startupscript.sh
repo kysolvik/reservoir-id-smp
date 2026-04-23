@@ -10,6 +10,11 @@ satellite=${hostname_to_parse:3:8}
 y=${hostname_to_parse:12:4}
 vm_name="rp-${satellite}-${y}"
 touch "~/${satellite}_${year}.foo"
+# Landsat 9
+if [ $satellite = "landsat9" ]; then
+    mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls9_v9.npy
+    bands_minmax_path=gs://res-id/cnn/training/prepped_gaip_landsat/landsat_all_imgs_bands_min_max_ls9_10m_v9.npy
+fi
 # Landsat 8
 if [ $satellite = "landsat8" ]; then
     mean_std_path=gs://res-id/cnn/training/prepped_gaip_landsat/mean_std_ls8_v9.npy
@@ -54,7 +59,7 @@ if [[ ! -f ~/already_run.foo ]]; then
     # Get code
     git clone https://github.com/kysolvik/reservoir-id-smp.git
     cd reservoir-id-smp/reservoir-id-smp/predict/
-    git checkout quantized-prediction
+    git checkout landsat-pred-update
 
     # Get data files
     gsutil cp $model_gs_path ./model.ckpt
@@ -80,7 +85,7 @@ fi
 # Run
 tsp python3 -u predict_smp_landsat.py vrts/ls_10m_${satellite}_${y}.vrt model.ckpt mean_std.npy bands_minmax.npy \
     $out_path --quantized --region_shp shp/Brazil_10kmbuffer_noremoteislands_noholes.shp
-tsp bash bash_scripts/zip_all.sh $satellite
+tsp bash bash_scripts/zip_landsat_all.sh $satellite
 
 # Prep logs/shutdown
 mkdir -p logs

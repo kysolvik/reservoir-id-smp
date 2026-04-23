@@ -54,6 +54,11 @@ class DatasetImageOnly(BaseDataset):
         
         # read data
         image = io.imread(self.images_fps[i])
+
+        # Remove first band if image is 11 bands (old Landsat 8)
+        if image.shape[2] == 11:
+            image = image[:,:,1:]
+
         if self.mean_std is not None:
             image = normalize_image(image, self.mean_std)
         
@@ -111,6 +116,11 @@ class Dataset(BaseDataset):
         
         # read data
         image = io.imread(self.images_fps[i])
+
+        # Remove first band if image is 11 bands (old Landsat 8)
+        if image.shape[2] == 11:
+            image = image[:,:,1:]
+
         if self.mean_std is not None:
             image = normalize_image(image, self.mean_std)
         

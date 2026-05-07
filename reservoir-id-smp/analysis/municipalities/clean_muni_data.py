@@ -20,6 +20,45 @@ cattle.to_csv('./data/cattle.csv')
 # Example read:
 # pd.read_csv('./data/cattle.csv', index_col=0)
 
+## Aquiculture
+aqua = pd.read_excel('./data/tabela3940.xlsx')
+aqua.columns = aqua.iloc[3]
+prod_list = aqua.columns[2:]
+aqua.columns = ['cd_mun', 'municipal'] + list(prod_list)
+aqua = aqua.drop(columns=['municipal'])
+aqua = aqua.iloc[4:-1]
+aqua['cd_mun'] = aqua['cd_mun'].astype(int)
+aqua = aqua.set_index('cd_mun')
+# Things in quilos only
+aqua = aqua[[c for c in aqua.columns if 'Quilogramas' in c]]
+aqua = aqua.replace(['-', '...'], 0)
+aqua = aqua.astype(float)
+aqua['total_aqua_kilos'] = aqua.sum(axis=1)
+aqua.to_csv('./data/aqua.csv')
+
+
+### River and road lengths, plus counts of crossings
+river_lengths = gpd.read_file(
+    './data/rivers_in_munis.gpkg'
+    ).set_index(
+        'cd_mun'
+        )[['segment_length']].rename(
+            columns={'segment_length':'river_length'}
+            )
+road_lengths = gpd.read_file(
+    './data/roads_in_munis.gpkg'
+    )
+crossings = gpd.read_file('./data/river_road_intersections.gpkg')
+road_crossings = gpd.sjoin(crossings, road_lengths.to_crs('EPSG:4674'), predicate='within', how='left')
+road_crossings_count = road_crossings.groupby('cd_mun').size().rename('crossing_count').astype(int)
+muni_river_roads = road_lengths.set_index('cd_mun').join(road_crossings_count).fillna(0)
+muni_river_roads = muni_river_roads[['crossing_count', 'segment_length']].rename(
+    columns={'segment_length': 'road_length'}).join(
+        river_lengths
+    )
+muni_river_roads.to_csv('./data/muni_river_roads.csv')
+
+
 ### Crops ###
 def process_crops(excel_file, variable):
     crops_rename_dict = {
@@ -43,7 +82,7 @@ def process_crops(excel_file, variable):
 
     # Assign years
     years_unique = years.unique()
-    years_unique = years_unique[years_unique!='nan'].astype(int)
+    years_unique = years_unique[(years_unique!='nan') & (~years_unique.isna())].astype(int)
     crops.columns = crops.iloc[1]
     crops = crops.rename(columns={'Município':'cd_mun'}).set_index('cd_mun')
     crops.columns = pd.MultiIndex.from_product([years_unique, crop_names.unique()[1:]])
@@ -149,18 +188,24 @@ def sjoin_summarize_nogroup(points_gdf, poly_gdf):
     return joined_gdf[['area_ha']].agg(['sum', 'count', 'median'])
 
 # Muni stats
-in_csv = '../clean_summarize/out/sentinel_2021_v7_wgs84_bordermerged.csv'
+in_csv = '../clean_summarize/out/sentinel_v7/sentinel_2021_v7_wgs84_bordermerged.csv'
 muni_gdf = gpd.read_file('./data/municipios.shp')
 muni_gdf['center_lon'] = muni_gdf.geometry.centroid.x
 muni_gdf['center_lat'] = muni_gdf.geometry.centroid.y
+print(muni_gdf.shape)
 res_gdf = read_process_csv_to_gdf(in_csv)
 res_gdf['res_area_ha'] = res_gdf['area_ha']
 joined_gdf = gpd.sjoin(res_gdf, muni_gdf, predicate='within', how='inner')
 muni_res_stats = sjoin_summarize(res_gdf, muni_gdf, 'cd_mun')
-muni_res_stats = muni_res_stats.join(muni_gdf.set_index('cd_mun')[['area_ha', 'center_lon','center_lat']])
+muni_res_stats = muni_res_stats.join(muni_gdf.set_index('cd_mun')[['area_ha', 'center_lon','center_lat']], how='outer')
+print(muni_res_stats.shape)
 
 # Most predictors
 cattle = pd.read_csv('./data/cattle.csv', index_col=0)
+aqua = pd.read_csv('./data/aqua.csv', index_col=0)[['total_aqua_kilos']]
+aqua.columns = (pd.MultiIndex.from_product([['2021'], aqua.columns]))
+muni_river_roads = pd.read_csv('./data/muni_river_roads.csv', index_col=0)
+muni_river_roads.columns = (pd.MultiIndex.from_product([['2021'], muni_river_roads.columns]))
 crops = pd.read_csv('./data/crops.csv', header=[0,1], index_col=0)
 pib = pd.read_csv('./data/pib.csv', header=[0,1], index_col=0)
 pop = pd.read_csv('./data/pop.csv',index_col=0)
@@ -265,8 +310,24 @@ mb_diffs.columns = mb_diffs.columns + '_diff'
 
 
 # Merge everything together
-preds_2021 = cattle.join(crops).join(pib).join(pop)['2021'].join(precip).join(mb_diffs).join(mb_cur).join(irrigation[['irrigation_2022']])
+preds_2021 = cattle.join(
+    crops, how='outer'
+    ).join(
+        aqua, how='outer'
+        ).join(
+            muni_river_roads, how='outer'
+            ).join(pib, how='outer').join(
+                pop, how='outer'
+                )['2021'].join(
+                    precip, how='outer').join(
+                        mb_diffs, how='outer').join(
+                            mb_cur, how='outer'
+                            ).join(
+                                irrigation[['irrigation_2022']], how='outer'
+                                )
 
+print(preds_2021.shape)
+print(muni_res_stats.shape)
 full_df = preds_2021.join(muni_res_stats)
 full_df_density = full_df.div((full_df['area_ha']/100), axis=0)
 full_df_density.columns = full_df_density.columns + '_density'

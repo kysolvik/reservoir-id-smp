@@ -8,13 +8,12 @@ in_csv = sys.argv[1]
 out_csv = sys.argv[2]
 
 mb_keys_dict = {
-    'crop': np.array([18,19,39,20,40,62,41,36,46,47,35,48]),
-    'forest': np.array([3]),
-    'savanna': np.array([4]),
-    'grassland':np.array([12]),
+    'forest':np.array([3,4,5,6,49]),
+    'herb':np.array([11,12,32,29,50]),
     'pasture': np.array([15]),
-    'water': np.array([26]),
-    'mosaic': np.array([21])
+    'crop': np.array([18,19,39,20,40,62,41,36,46,47,35,48]),
+    'mosaic': np.array([21]),
+    'other': np.array([23, 24, 30, 75, 25, 21, 9, 26, 31, 33])
 }
 
 def year_from_string(string):
@@ -42,20 +41,7 @@ def summarize_lulc(year_df):
     return out_df
 
 def classify_lulc(lulc_counts_df):
-
-    natural_covers = ['forest', 'grassland', 'savanna']
-    ag_covers = ['crop','pasture']
-    natural_df = lulc_counts_df[natural_covers]
-    ag_df = lulc_counts_df[ag_covers]
-    ag_sum = ag_df.sum(axis=1)
-    natural_sum = natural_df.sum(axis=1)
-    is_natural = ((ag_sum < 2500) & (natural_sum> 2500))
-    natural_cover = natural_df.loc[is_natural].idxmax(axis=1)
-    is_ag = ((~is_natural) & (ag_sum > 2500))
-    ag_cover = ag_df.loc[is_ag].idxmax(axis=1)
-    lulc_counts_df['class'] = 'other'
-    lulc_counts_df.loc[is_ag, 'class'] = ag_cover
-    lulc_counts_df.loc[is_natural, 'class'] = natural_cover
+    lulc_counts_df['class'] = lulc_counts_df.idxmax(axis=1)
     return lulc_counts_df
 
 def calc_lulc_full(df):

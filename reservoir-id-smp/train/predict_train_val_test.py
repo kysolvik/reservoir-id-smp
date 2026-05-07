@@ -15,16 +15,18 @@ import torchvision
 import subprocess as sp
 from scipy import ndimage
 
+SPLIT = 'test'
+
 # Set params
 mean_std = np.load('./data/mean_stds/mean_std_sentinel_v12.npy')
-DATA_DIR = './data/reservoirs_10band_v12/'
+DATA_DIR = './data/reservoirs_10band/'
 save_truth=True
-TRUE_NPY = './data/preds/reservoirs_10band_masks_train.npy'
+TRUE_NPY = f'./data/preds/reservoirs_10band_masks_{SPLIT}.npy'
 
 # Replace val with train or test to predict on those
-x_valid_dir = os.path.join(DATA_DIR, 'img_dir/train')
-y_valid_dir = os.path.join(DATA_DIR, 'ann_dir/train')
-PRED_NPY = './data/preds/reservoirs_10band_manet_datav12_modelv6_train.npy'
+x_valid_dir = os.path.join(DATA_DIR, f'img_dir/{SPLIT}')
+y_valid_dir = os.path.join(DATA_DIR, f'ann_dir/{SPLIT}')
+PRED_NPY = f'./data/preds/reservoirs_10band_manet_datav12_modelv6_{SPLIT}.npy'
 checkpoint_path = './models/best/sentinel_datav12_modelv6.ckpt'
 
 def to_tensor(x, **kwargs):
@@ -32,14 +34,14 @@ def to_tensor(x, **kwargs):
 
 def get_preprocessing():
     """Construct preprocessing transform
-    
+
     Args:
-        preprocessing_fn (callbale): data normalization function 
+        preprocessing_fn (callbale): data normalization function
             (can be specific for each pretrained neural network)
     Return:
         tranform: albumentations.Compose
     """
-    
+
     _transform = [
         albu.Lambda(image=to_tensor, mask=to_tensor),
     ]
@@ -50,65 +52,65 @@ def normalize_image(ar, mean_std):
 
 class Dataset(BaseDataset):
     """
-    
+
     Args:
         images_dir (str): path to images folder
         masks_dir (str): path to segmentation masks folder
         class_values (list): values of classes to extract from segmentation mask
-        augmentation (albumentations.Compose): data transfromation pipeline 
+        augmentation (albumentations.Compose): data transfromation pipeline
             (e.g. flip, scale, etc.)
-        preprocessing (albumentations.Compose): data preprocessing 
+        preprocessing (albumentations.Compose): data preprocessing
             (e.g. noralization, shape manipulation, etc.)
-    
+
     """
-    
+
     CLASSES = ['background', 'water']
-    
+
     def __init__(
-            self, 
-            images_dir, 
-            masks_dir, 
-            classes=None, 
-            augmentation=None, 
+            self,
+            images_dir,
+            masks_dir,
+            classes=None,
+            augmentation=None,
             preprocessing=None,
             mean_std = None
     ):
         self.ids = sorted(os.listdir(images_dir))
         self.images_fps = [os.path.join(images_dir, image_id) for image_id in self.ids]
         self.masks_fps = [os.path.join(masks_dir, image_id.replace('.tif', '.png')) for image_id in self.ids]
-        
+
         # convert str names to class values on masks
         self.class_values = [self.CLASSES.index(cls.lower()) for cls in classes]
-        
+
         self.augmentation = augmentation
         self.preprocessing = preprocessing
         self.mean_std = mean_std
-    
+
     def __getitem__(self, i):
-        
+
         # read data
         image = io.imread(self.images_fps[i])
         if self.mean_std is not None:
             image = normalize_image(image, self.mean_std)
         mask = io.imread(self.masks_fps[i])
-        
+
         # extract certain classes from mask (e.g. cars)
         masks = [(mask == v) for v in self.class_values]
         mask = np.stack(masks, axis=-1).astype('float')
-        
+
         # apply augmentations
         if self.augmentation:
             sample = self.augmentation(image=image, mask=mask)
             image, mask = sample['image'], sample['mask']
-        
+
         # apply preprocessing
         if self.preprocessing:
             sample = self.preprocessing(image=image, mask=mask)
-            image, mask = sample['image'], sample['mask']  
+            image, mask = sample['image'], sample['mask']
 
         #Convert to PIL
         return {'image':image, 'mask':mask}
-        
+
     def __len__(self):
         return len(self.ids)
 
@@ -134,16 +136,16 @@ class ResModel(pl.LightningModule):
         return self.crop_transform(mask)
 
     def shared_step(self, batch, stage):
-        
+
         image = batch["image"]
 
         # Shape of the image should be (batch_size, num_channels, height, width)
         # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]
         assert image.ndim == 4
 
-        # Check that image dimensions are divisible by 32, 
-        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of 
-        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have 
+        # Check that image dimensions are divisible by 32,
+        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of
+        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have
         # following shapes of features in encoder and decoder: 84, 42, 21, 10, 5 -> 5, 10, 20, 40, 80
         # and we will get an error trying to concat these features
         h, w = image.shape[2:]
@@ -182,18 +184,18 @@ class ResModel(pl.LightningModule):
         tn = torch.cat([x["tn"] for x in outputs])
 
         per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
-        
+
         dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
 
         metrics = {
             f"{stage}_per_image_iou": per_image_iou,
             f"{stage}_dataset_iou": dataset_iou,
         }
-        
+
         self.log_dict(metrics, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")            
+        return self.shared_step(batch, "train")
 
     def training_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "train")
@@ -205,11 +207,11 @@ class ResModel(pl.LightningModule):
         return self.shared_epoch_end(outputs, "valid")
 
     def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")  
+        return self.shared_step(batch, "test")
 
     def test_epoch_end(self, outputs):
         return self.shared_epoch_end(outputs, "test")
-    
+
     def predict_step(self, batch, batch_idx, dataloader_idx=0):
         return self(batch['image']).sigmoid()
 
@@ -223,8 +225,8 @@ model =  ResModel.load_from_checkpoint(checkpoint_path, in_channels=10, out_clas
 CLASSES = ['Water']
 
 valid_dataset = Dataset(
-    x_valid_dir, 
-    y_valid_dir, 
+    x_valid_dir,
+    y_valid_dir,
     preprocessing=get_preprocessing(),
     classes=CLASSES,
     mean_std=mean_std,

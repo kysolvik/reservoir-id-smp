@@ -1,6 +1,5 @@
 """Calculate sub-basin Strahler order based on ANA data"""
 import geopandas as gpd
-import numpy as np
 
 drainage = gpd.read_file('./data/geoft_bho_area_drenagem.gpkg')
 drainage['nunivotto8'] = drainage['cobacia'].str[:8]

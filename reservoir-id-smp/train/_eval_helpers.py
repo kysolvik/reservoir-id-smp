@@ -4,6 +4,30 @@ import rasterio as rio
 import numpy as np
 from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
+import segmentation_models_pytorch as smp
+from sklearn.metrics import precision_recall_curve
+import torch
+from scipy import ndimage
+import os
+
+
+# Object-size classes (pixels) used for size-binned precision/recall reporting.
+# Shared by full_evaluation (Sentinel) and the Landsat threshold workflow.
+# SIZE_DICT = {
+#     'remove_xsmall': [0, 4],
+#     'very_small': [4, 10],
+#     'small': [10, 100],
+#     'medium': [100, 1000],
+#     'large': [1000, 5000],
+#     'remove_xlarge': [5000, 1000000],
+# }
+SIZE_DICT = {
+    'remove_xsmall': [0, 10],
+    'small': [10, 100],
+    'medium': [100, 1000],
+    'large': [1000, 10000],
+    'remove_xlarge': [10000, 1000000],
+}
 
 
 def distance_to_nearest(gdf_target, gdf_training, k=3):
@@ -23,52 +47,455 @@ def distance_to_nearest(gdf_target, gdf_training, k=3):
     return gdf_target
 
 
-def prep_sample_stats_csv(csv):
+# Annotation tile locations (name/split/center coords) shared by both sensors.
+# Path is relative to the train/ dir the eval scripts run from.
+LOCATIONS_CSV = '../annotation_prep/csvs/annotation_locations.csv'
+# Equal-area CRS (South America Albers) used for distance computations.
+DIST_PROJ_CRS = 'ESRI:102033'
 
-    full_df = pd.read_csv(csv)
-    full_df['precision'] = full_df['true_positive_pixels'] / (full_df['true_positive_pixels'] + full_df['false_positive_pixels'] + 1e-6)
-    full_df['recall'] = full_df['true_positive_pixels'] / (full_df['true_positive_pixels'] + full_df['false_negative_pixels'] + 1e-6)
-    full_df['f1'] = 2 * (full_df['precision'] * full_df['recall']) / (full_df['precision'] + full_df['recall'] + 1e-6)
-    full_gdf = gpd.GeoDataFrame(full_df,
-                                geometry=gpd.points_from_xy(full_df['center_longitude'], full_df['center_latitude']),
-                                crs='EPSG:4326').to_crs('ESRI:102033')
-    train_df = full_gdf[full_gdf['set'] == 'train']
-    full_df
-    val_df = full_gdf[full_gdf['set'] == 'val']
-    test_df = full_gdf[full_gdf['set'] == 'test']
+
+def build_distance_dfs(per_image_df, locations_csv=LOCATIONS_CSV, proj_crs=DIST_PROJ_CRS):
+    """Merge per-image tp/fp/fn stats onto annotation locations and measure,
+    for each val/test tile, the distance to the nearest *training* tile.
+
+    The tile coordinates come from ``locations_csv`` (so every training tile has
+    a position even when only val/test predictions are available), and the
+    per-image prediction stats are joined on ``basename`` == annotation ``name``
+    minus its ``.tif`` extension.
+
+    Args:
+        per_image_df: DataFrame as written by ``per_image_stats`` with columns
+            ['basename', 'tp', 'fp', 'fn', ...]. May cover any mix of splits.
+        locations_csv: annotation_locations.csv with 'name', 'split',
+            'center_longitude', 'center_latitude'.
+        proj_crs: equal-area CRS used for the nearest-neighbor distances.
+
+    Returns:
+        (val_df, test_df, test_val_df) GeoDataFrames with 'precision'/'recall'/
+        'f1' and 'dist_to_nearest_training' columns. ``test_val_df`` measures
+        test-tile distance to the nearest *validation* tile instead of training.
+    """
+    loc = pd.read_csv(locations_csv)
+    loc['basename'] = loc['name'].str.replace('.tif', '', regex=False)
+    loc_gdf = gpd.GeoDataFrame(
+        loc,
+        geometry=gpd.points_from_xy(loc['center_longitude'], loc['center_latitude']),
+        crs='EPSG:4326').to_crs(proj_crs)
+
+    stats = per_image_df.copy()
+    stats['precision'] = stats['tp'] / (stats['tp'] + stats['fp'] + 1e-6)
+    stats['recall'] = stats['tp'] / (stats['tp'] + stats['fn'] + 1e-6)
+    stats['f1'] = 2 * (stats['precision'] * stats['recall']) / (stats['precision'] + stats['recall'] + 1e-6)
+    gdf = loc_gdf.merge(
+        stats[['basename', 'tp', 'fp', 'fn', 'precision', 'recall', 'f1']],
+        on='basename', how='left')
+
+    train_df = gdf[gdf['split'] == 'train']
+    val_df = gdf[(gdf['split'] == 'val') & gdf['f1'].notna()].copy()
+    test_df = gdf[(gdf['split'] == 'test') & gdf['f1'].notna()].copy()
     val_df = distance_to_nearest(val_df, train_df)
     test_df = distance_to_nearest(test_df, train_df)
     test_val_df = distance_to_nearest(test_df.copy(), val_df)
     return val_df, test_df, test_val_df
 
-def plot_distance_curve(df, title):
-    df["dist_bin"] = pd.cut(df["dist_to_nearest_training"], bins=10)
-    binned = df.groupby("dist_bin")["f1"].agg(["mean", "std", "count"])
-    bin_centers = binned.index.map(lambda x: x.mid)
 
-    fig, axs = plt.subplots(2, 1)
+SPLIT_NAMES = {'val': 'Validation', 'test': 'Test', 'train': 'Training'}
+
+
+def pretty_sensor_label(label):
+    """Turn a sensor code into a readable name for figure titles.
+
+    'ls8_2017' -> 'Landsat 8 (2017)'; 'sentinel' -> 'Sentinel-2'; anything else
+    is returned unchanged (with underscores turned into spaces).
+    """
+    low = label.lower()
+    if low.startswith('ls') and '_' in low:
+        sensor, year = low.split('_', 1)
+        return f'Landsat {sensor[2:]} ({year})'
+    if low == 'sentinel':
+        return 'Sentinel-2'
+    return label.replace('_', ' ')
+
+
+def plot_distance_curves(per_image_df, label, locations_csv=LOCATIONS_CSV,
+                         fig_dir=None, proj_crs=DIST_PROJ_CRS):
+    """Plot F1-vs-distance-to-nearest-training-tile for the val and test splits.
+
+    Builds the distance DataFrames from ``per_image_df`` + ``locations_csv``
+    (see ``build_distance_dfs``) and plots one micro-averaged F1 curve per split.
+    All tiles are kept (including those with no reservoirs) so their false
+    positives count toward each bin's pooled precision. If ``fig_dir`` is given
+    the figures are saved as ``distance_curve_{label}_{split}.jpg``, otherwise
+    they are shown interactively.
+    """
+    val_df, test_df, _ = build_distance_dfs(per_image_df, locations_csv, proj_crs)
+    slug = label.lower().replace(' ', '_')
+    sensor_name = pretty_sensor_label(label)
+    for split_name, df in [('val', val_df), ('test', test_df)]:
+        save_path = None
+        if fig_dir is not None:
+            os.makedirs(fig_dir, exist_ok=True)
+            save_path = os.path.join(fig_dir, f'distance_curve_{slug}_{split_name}.jpg')
+        title = f'{sensor_name} — {SPLIT_NAMES.get(split_name, split_name)} set'
+        plot_distance_curve(df, title, save_path)
+        if save_path is not None:
+            print(f'  wrote {save_path}')
+
+
+def plot_distance_curve(df, title, save_path=None, bin_width=20000, min_count=2,
+                        cap=100000):
+    """Plot a micro-averaged F1 vs distance-to-nearest-training-tile curve.
+
+    Tiles are grouped into fixed-width distance bins (``bin_width`` meters) and a
+    single F1 is computed per bin by pooling each tile's tp/fp/fn, rather than
+    averaging per-tile F1 (which is noisy for tiles with few reservoir pixels).
+    Everything beyond ``cap`` meters is pooled into one catch-all ">cap" bin so
+    the sparse long tail doesn't get its own noisy bins. Bins with fewer than
+    ``min_count`` tiles are dropped. The lower panel shows the per-bin tile count.
+    """
+    df = df.copy()
+    bin_km = bin_width / 1000
+    cap_km = cap / 1000
+    dist_km = df["dist_to_nearest_training"] / 1000
+
+    # Fixed-width bins up to the cap, then one catch-all bin (cap, inf).
+    reg_edges = np.arange(0, cap_km + bin_km, bin_km)
+    df["dist_bin"] = pd.cut(dist_km, bins=np.append(reg_edges, np.inf))
+    grouped = df.groupby("dist_bin", observed=False)
+    pooled = grouped[["tp", "fp", "fn"]].sum()
+    precision = pooled["tp"] / (pooled["tp"] + pooled["fp"] + 1e-6)
+    recall = pooled["tp"] / (pooled["tp"] + pooled["fn"] + 1e-6)
+    f1 = 2 * precision * recall / (precision + recall + 1e-6)
+    # Bins with no ground-truth reservoirs (no tp and no fn) have an undefined
+    # F1 (rather than ~0); a bin with fn but no tp is a real recall-0 case.
+    f1 = f1.where((pooled["tp"] + pooled["fn"]) > 0, np.nan)
+    count = grouped.size()
+    # Drop sparse bins (too few tiles to be meaningful) from both panels.
+    enough = count >= min_count
+    f1 = f1.where(enough, np.nan)
+    count = count.where(enough, np.nan)
+
+    # Visual bin extents: the catch-all bin is drawn one bin_km wide past the cap.
+    left_edges = np.append(reg_edges[:-1], cap_km)
+    right_edges = np.append(reg_edges[1:], cap_km + bin_km)
+    centers_km = (left_edges + right_edges) / 2
+
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 5),
+                            gridspec_kw={"height_ratios": [3, 1]})
+    fig.suptitle(title, fontsize=13, fontweight="bold")
+
     ax = axs[0]
-    ax.plot(bin_centers.values, binned["mean"], marker="o")
-    ax.fill_between(
-        bin_centers.values,
-        binned["mean"] - binned["std"],
-        binned["mean"] + binned["std"],
-        alpha=0.2,
-        label="±1 std"
-    )
-    ax.set_xlabel("Distance to nearest training point (m)")
+    ax.plot(centers_km, f1.values, marker="o", color="tab:blue", zorder=3)
     ax.set_ylabel("F1 score")
-    ax.set_title(title)
+    ax.set_ylim(0, 1.05)
+    ax.grid(axis="y", alpha=0.3)
+
     ax2 = axs[1]
-    ax2.bar(x=np.array(bin_centers.values, dtype=np.float32),
-            height=binned["count"].values,
-            width=(bin_centers.values[1] - bin_centers.values[0]) * 0.8)
+    ax2.bar(centers_km, count.values, width=bin_km * 0.9,
+            color="0.6", edgecolor="white", zorder=3)
     ax2.set_ylabel("Tile count")
-    plt.tight_layout()
-    fig.show()
+    ax2.set_xlabel("Distance to nearest training tile (km)")
+    ax2.grid(axis="y", alpha=0.3)
 
-val_df, test_df, test_val_df = prep_sample_stats_csv('../annotation_prep/csvs/annotation_locations_stats.csv')
+    # Ticks at the regular bin edges only; clip to the range of populated bins.
+    kept = np.flatnonzero(enough.values)
+    left, right = left_edges[kept[0]], right_edges[kept[-1]]
+    ax2.set_xticks([e for e in reg_edges if left <= e <= right])
+    ax2.set_xlim(left, right)
+    # Label the catch-all bin with centered text (no tick mark in its middle).
+    if right > cap_km:
+        pad = plt.rcParams['xtick.major.pad']
+        ax2.annotate(f'>{int(cap_km)}', xy=(centers_km[-1], 0),
+                     xycoords=('data', 'axes fraction'),
+                     xytext=(0, -pad), textcoords='offset points',
+                     ha='center', va='top', fontsize=plt.rcParams['xtick.labelsize'])
 
-plot_distance_curve(val_df.loc[val_df[['true_positive_pixels', 'false_negative_pixels']].sum(axis=1) > 0], "Validation Set")
-plot_distance_curve(test_df.loc[test_df[['true_positive_pixels', 'false_negative_pixels']].sum(axis=1) > 0], "Test Set")
-plot_distance_curve(test_val_df.loc[test_val_df[['true_positive_pixels', 'false_negative_pixels']].sum(axis=1) > 0], "Test (Validation Points)")
+    fig.tight_layout()
+    if save_path is not None:
+        fig.savefig(save_path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+    else:
+        fig.show()
+    return fig
+
+def compute_stats(true, preds, cutoff):
+    preds_binary = torch.Tensor(preds>cutoff).long()
+    tp, fp, fn, tn = smp.metrics.get_stats(
+        preds_binary,
+        true,
+        mode="binary")
+
+    iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
+    f1 = smp.metrics.f1_score(tp, fp, fn, tn, reduction="micro")
+    prec = smp.metrics.precision(tp, fp, fn, tn, reduction="micro")
+    recall = smp.metrics.recall(tp, fp, fn, tn, reduction="micro")
+
+    return np.array([iou, f1, prec, recall])
+
+def find_best_cutoff(preds, masks, cutoffs, max_iou_mode=False):
+    """Search ``cutoffs`` for the best pixel-wise threshold against ``masks``.
+
+    If ``max_iou_mode`` is True the cutoff maximizing IoU is chosen, otherwise
+    the cutoff that best balances precision and recall (minimizes their
+    absolute difference). Returns the median cutoff among all that tie the
+    selected cutoff's IoU (matches the original threshold-calc behavior).
+
+    Args:
+        preds: float prediction array (n, h, w).
+        masks: ground-truth/baseline mask array or tensor (n, h, w).
+        cutoffs: 1-D array of candidate thresholds.
+        max_iou_mode: select by max IoU (True) or balanced P/R (False).
+    """
+    cutoffs = np.asarray(cutoffs)
+    masks = torch.as_tensor(np.asarray(masks)).long()
+    all_stats = np.vstack([compute_stats(masks, preds, c) for c in cutoffs])
+    if max_iou_mode:
+        best_index = np.argmax(all_stats[:, 0])
+    else:
+        best_index = np.argmin(np.abs(all_stats[:, 2] - all_stats[:, 3]))
+    return np.median(cutoffs[np.where(all_stats[:, 0] == all_stats[best_index, 0])[0]])
+
+def get_objects(ar, pred_thresh=0.5):
+    labeled_ar, num_objects = ndimage.label(ar>pred_thresh)
+    return labeled_ar, num_objects
+
+def calculate_iou(maska, maskb):
+  # Calculates the Intersection over Union (IoU) of two bounding boxes.
+  top = np.sum(maska * maskb)
+  bottom = np.sum(np.max([maska, maskb], axis=0))
+  return top/bottom
+
+def per_image_stats(preds, truth, img_dir, best_cutoff=0.5):
+    preds_binary = torch.Tensor(preds>best_cutoff).long()
+    tp, fp, fn, tn = smp.metrics.get_stats(
+        preds_binary,
+        truth,
+        mode="binary")
+    ids = sorted(os.listdir(img_dir))
+    out_df = pd.DataFrame(
+        {'basename': [n[:-4] for n in ids],
+         'tp': tp.sum(axis=1),
+         'fp': fp.sum(axis=1),
+         'fn': fn.sum(axis=1),
+         'tn': tn.sum(axis=1)}
+    )
+    return out_df
+
+
+def object_stats(truth_masks, pred_masks, pred_thresh=0.5):
+    total_truth_objects = 0
+    total_pred_objects = 0
+    total_truth_area = 0
+    total_pred_area = 0
+    max_pred_size = 0
+    max_truth_size = 0
+    min_truth_size = 1000
+
+    for i in range(len(truth_masks)):
+        labeled_truth, max_truth = get_objects(truth_masks[i])
+        labeled_pred, max_pred = get_objects(pred_masks[i], pred_thresh)
+
+        if max_truth > 0:
+            # First, filter only to truth objects within threshold
+            for j in range(1, max_truth+1):
+                total_truth_objects += 1
+                mask_truth = (labeled_truth==j)
+                truth_size = mask_truth.sum()
+                total_truth_area += truth_size
+                if truth_size > max_truth_size:
+                    max_truth_size = truth_size
+                if truth_size < min_truth_size:
+                    min_truth_size = truth_size
+        if max_pred > 0:
+            for k in range(1, max_pred+1):
+                total_pred_objects += 1
+                mask_pred = (labeled_pred==k)
+                pred_size = mask_pred.sum()
+                total_pred_area += pred_size
+                if pred_size > max_pred_size:
+                    max_pred_size = pred_size
+                if mask_pred.sum() > max_pred_size:
+                    max_pred_size = mask_pred.sum()
+    out_dict = {
+        'total_truth_objects': total_truth_objects,
+        'total_truth_area': total_truth_area,
+        'min_truth_size': min_truth_size,
+        'max_truth_size': max_truth_size,
+        'total_pred_objects': total_pred_objects,
+        'total_pred_area': total_pred_area,
+        'max_pred_size': max_pred_size,
+    }
+    return out_dict
+
+def get_size_stats_dict(truth_masks, pred_masks, pred_thresh):
+    all_sizes_preds = []
+    pred_assessment = []
+    all_sizes_truth = []
+    truth_assessment = []
+    for i in range(len(truth_masks)):
+        labeled_truth, max_truth = get_objects(truth_masks[i])
+        labeled_pred, max_pred = get_objects(pred_masks[i], pred_thresh)
+        for j in range(1, max_truth+1):
+            mask_truth = (labeled_truth==j)
+            all_sizes_truth.append(mask_truth.sum())
+            if np.max(labeled_pred * mask_truth) > 0:
+                truth_assessment.append(1) # TP
+                pred_assessment.append(1) # TP
+                # Find the max overlap
+                max_val = 0
+                max_overlap = 0
+                for val in np.unique(labeled_pred[(labeled_pred>0)&(mask_truth>0)]):
+                    overlap = np.sum((labeled_pred==val)*(mask_truth>0))
+                    if overlap > max_overlap:
+                        max_val = val
+                        max_overlap = overlap
+                all_sizes_preds.append(np.sum(labeled_pred==max_val))
+                # Remove that pred from the pool
+                labeled_pred[labeled_pred==max_val] = 0
+            else:
+                truth_assessment.append(0) # FN
+
+        for k in np.unique(labeled_pred):
+            if k != 0:
+                pred_assessment.append(0) # FPrange(1, max_pred+1):
+                mask_pred = (labeled_pred==k)
+                all_sizes_preds.append(mask_pred.sum())
+
+    return {
+        'truth_sizes': all_sizes_truth,
+        'truth_assessment': truth_assessment,
+        'pred_sizes': all_sizes_preds,
+        'pred_assessment': pred_assessment
+    }
+
+
+def process_size_stats(true_df, pred_df, size_dict):
+    for size_class, sizes in size_dict.items():
+        temp_true = true_df.loc[(true_df['size']>sizes[0])&(true_df['size']<=sizes[1])]
+        temp_pred = pred_df.loc[(pred_df['size']>sizes[0])&(pred_df['size']<=sizes[1])]
+        out_dict = {
+            'size_class': size_class,
+            'total_true':temp_true.shape[0],
+            'total_pred': temp_pred.shape[0],
+            'tp_true': temp_true['tp'].sum().item(),
+            'tp_pred': temp_pred['tp'].sum().item(),
+            'precision': temp_pred['tp'].sum().item() / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0,
+            'recall': temp_true['tp'].sum().item() / temp_true.shape[0] if temp_true.shape[0]>0 else 0,
+        }
+        print(out_dict)
+    # Overall precision and recall
+    smallest_size = list(size_dict.keys())[0]
+    largest_size = list(size_dict.keys())[-1]
+
+
+    temp_true = true_df.loc[(true_df['size']>size_dict[smallest_size][1])
+                            &(true_df['size']<=size_dict[largest_size][0])]
+    temp_pred = pred_df.loc[(pred_df['size']>size_dict[smallest_size][1])
+                            &(pred_df['size']<=size_dict[largest_size][0])]
+    out_dict = {
+        'size_class': 'all',
+        'total_true':temp_true.shape[0],
+        'total_pred': temp_pred.shape[0],
+        'tp_true': temp_true['tp'].sum().item(),
+        'tp_pred': temp_pred['tp'].sum().item(),
+        'precision': temp_pred['tp'].sum().item() / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0,
+        'recall': temp_true['tp'].sum().item() / temp_true.shape[0] if temp_true.shape[0]>0 else 0,
+    }
+    print(out_dict)
+
+
+
+def size_stats(truth_masks, pred_masks, size_min, size_max, pred_thresh=0.5):
+    total_truth_objects = 0
+    truth_objects_detected = 0
+    total_pred_objects = 0
+    pred_objects_false = 0
+    pred_objects_true = 0
+
+    for i in range(len(truth_masks)):
+        labeled_truth, max_truth = get_objects(truth_masks[i])
+        labeled_pred, max_pred = get_objects(pred_masks[i], pred_thresh)
+
+        if max_pred > 0:
+            labeled_pred_temp = labeled_pred.copy()
+            # First, filter only to truth objects within threshold
+            for j in range(1, max_truth+1):
+                mask_truth = (labeled_truth==j)
+                if size_min < mask_truth.sum() <= size_max:
+                    total_truth_objects += 1
+            for k in range(1, max_pred+1):
+                mask_pred = (labeled_pred==k)
+                if size_min < mask_pred.sum() <= size_max:
+                    total_pred_objects += 1
+                    if np.max(labeled_truth * mask_pred) == 0:
+                        pred_objects_false += 1
+                    else:
+                        pred_objects_true += 1
+                        # Find the max overlap
+                        max_val = 0
+                        max_overlap = 0
+                        for val in np.unique(labeled_truth[(labeled_truth>0)&(mask_pred>0)]):
+                            overlap = np.sum((labeled_truth==val)*(mask_pred>0))
+                            if overlap > max_overlap:
+                                max_val = val
+                                max_overlap = overlap
+                        labeled_truth[labeled_truth==max_val] = 0
+        else:
+            for j in range(1, max_truth+1):
+                mask_truth = (labeled_truth==j)
+                if size_min < mask_truth.sum() <= size_max:
+                    total_truth_objects += 1
+
+
+    out_dict = {
+        'Total Truth': total_truth_objects,
+        'Total Pred': total_pred_objects,
+        'TP': pred_objects_true,
+        'FP': pred_objects_false
+    }
+    out_dict['recall'] = out_dict['TP'] / (out_dict['Total Truth'])#out_dict['TP'] + out_dict['FN'])
+    out_dict['precision'] = out_dict['TP'] / (out_dict['Total Pred'])
+    return out_dict
+
+
+def pr_curve(preds_path, truth_path):
+    preds = np.load(preds_path).flatten()
+    truth = np.load(truth_path).flatten()
+    return precision_recall_curve(truth, preds)
+
+
+def report_object_stats(truth, preds, best_cutoff):
+    """Print object-level and size-binned precision/recall for one prediction set.
+
+    Args:
+        truth: ground-truth mask array/tensor (n, h, w).
+        preds: float prediction array (n, h, w).
+        best_cutoff: probability threshold used to binarize ``preds``.
+    """
+    print('Object stats', object_stats(truth, preds, pred_thresh=best_cutoff))
+
+    size_stats_dict = get_size_stats_dict(truth, preds, pred_thresh=best_cutoff)
+    pred_df = pd.DataFrame({'size': np.array(size_stats_dict['pred_sizes']),
+                            'tp': np.array(size_stats_dict['pred_assessment'])})
+    true_df = pd.DataFrame({'size': np.array(size_stats_dict['truth_sizes']),
+                            'tp': np.array(size_stats_dict['truth_assessment'])})
+    process_size_stats(true_df, pred_df, SIZE_DICT)
+
+
+def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=True, best_cutoff=0.5, crop_to_400=False):
+    preds = np.load(preds_path)
+    truth = torch.Tensor(np.load(truth_path)).long()
+    if crop_to_400:
+        preds = preds[:, 50:450, 50:450]
+        truth = truth[:, 50:450, 50:450]
+
+    # Basic pixel-wise stats
+    if find_cutoff:
+        best_cutoff = find_best_cutoff(preds, truth, np.arange(0, 1.0, 0.01), max_iou_mode=True)
+    print('Using cutoff:', best_cutoff)
+    print('Final pixel-wise stats:', compute_stats(truth, preds, cutoff=best_cutoff))
+
+    # Object-level and size-binned stats
+    report_object_stats(truth, preds, best_cutoff)
+
+    per_image_stats(preds, truth, img_dir, best_cutoff=best_cutoff).to_csv(per_image_csv, index=False)

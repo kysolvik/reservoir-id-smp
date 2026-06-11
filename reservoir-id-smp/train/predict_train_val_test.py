@@ -41,8 +41,8 @@ from _helper_model import ResModel
 # ---------------------------------------------------------------------------
 # Run settings
 # ---------------------------------------------------------------------------
-RUN_LIST = ['ls8_2017_bilinear', 'ls8_2017_30m']
-SPLITS = ['train', 'val', 'test']      # splits to predict on (e.g. add 'train')
+RUN_LIST = ['ls8_2017_30m']
+SPLITS = ['val', 'test']      # splits to predict on (e.g. add 'train')
 SAVE_MASKS = True             # write ground-truth masks once per split
 FIT_QUANTIZE = False          # re-fit the quantized Landsat model (slow); else load
 PRED_DIR = './data/preds'
@@ -101,12 +101,12 @@ CONFIGS = {
         'masks_out': '{split}_masks.npy',
     },
     'ls8_2017_30m': {
-        'checkpoint': './models/best/ls8_30m_v1.ckpt',
+        'checkpoint': './models/best/ls8_30m_v2.ckpt',
         'data_dir': './data/landsat8_2017_v9_30m',
         'mean_std': './data/mean_stds/mean_std_ls8_2017_v9_30m.npy',
         'in_channels': 6,
         'center_crop': 166,
-        'quantize': True,
+        'quantize': False,
         'og_out': 'ls8_2017_30m_preds_{split}_og.npy',
         'quant_out': 'ls8_2017_30m_preds_{split}_quant.npy',
         'masks_out': '{split}_masks_30m.npy',

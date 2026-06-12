@@ -1,6 +1,5 @@
 import pandas as pd
 import geopandas as gpd
-import rasterio as rio
 import numpy as np
 from scipy.spatial import cKDTree
 import matplotlib.pyplot as plt
@@ -30,7 +29,7 @@ SIZE_DICT = {
 }
 
 
-def distance_to_nearest(gdf_target, gdf_training, k=3):
+def distance_to_nearest(gdf_target, gdf_training, k=1):
 
     assert gdf_training.crs == gdf_target.crs
 
@@ -40,7 +39,7 @@ def distance_to_nearest(gdf_target, gdf_training, k=3):
     tree = cKDTree(coords_train)
     distances, indices = tree.query(coords_target, k=k)
     if k > 1:
-        gdf_target["dist_to_nearest_training"] = distances.mean(axis=1)
+        gdf_target["dist_to_nearest_training"] = np.median(distances, axis=1)
     else:
         gdf_target["dist_to_nearest_training"] = distances
 
@@ -128,30 +127,38 @@ def plot_distance_curves(per_image_df, label, locations_csv=LOCATIONS_CSV,
     the figures are saved as ``distance_curve_{label}_{split}.jpg``, otherwise
     they are shown interactively.
     """
-    val_df, test_df, _ = build_distance_dfs(per_image_df, locations_csv, proj_crs)
+    val_df, test_df, test_val_df = build_distance_dfs(per_image_df, locations_csv, proj_crs)
+    print('Median distance to nearest training tile:', test_df['dist_to_nearest_training'].median())
+    print('Median distance to nearest val tile:', test_val_df['dist_to_nearest_training'].median())
     slug = label.lower().replace(' ', '_')
     sensor_name = pretty_sensor_label(label)
-    for split_name, df in [('val', val_df), ('test', test_df)]:
+    for split_name, df in [('val', val_df), ('test_train', test_df), ('test_val', test_val_df)]:
         save_path = None
         if fig_dir is not None:
             os.makedirs(fig_dir, exist_ok=True)
             save_path = os.path.join(fig_dir, f'distance_curve_{slug}_{split_name}.jpg')
         title = f'{sensor_name} — {SPLIT_NAMES.get(split_name, split_name)} set'
-        plot_distance_curve(df, title, save_path)
+        if split_name == 'test_val':
+            cap_distance = 200000
+        else:
+            cap_distance = 100000
+        plot_distance_curve(df, title, save_path, cap=cap_distance)
         if save_path is not None:
             print(f'  wrote {save_path}')
 
 
-def plot_distance_curve(df, title, save_path=None, bin_width=20000, min_count=2,
-                        cap=100000):
-    """Plot a micro-averaged F1 vs distance-to-nearest-training-tile curve.
+def _draw_distance_panels(df, ax_f1, ax_count, xlabel, bin_width=20000,
+                          min_count=1, cap=200000):
+    """Draw a micro-averaged F1 curve (``ax_f1``) over a per-bin tile-count bar
+    panel (``ax_count``) for one distance DataFrame.
 
     Tiles are grouped into fixed-width distance bins (``bin_width`` meters) and a
     single F1 is computed per bin by pooling each tile's tp/fp/fn, rather than
     averaging per-tile F1 (which is noisy for tiles with few reservoir pixels).
-    Everything beyond ``cap`` meters is pooled into one catch-all ">cap" bin so
-    the sparse long tail doesn't get its own noisy bins. Bins with fewer than
-    ``min_count`` tiles are dropped. The lower panel shows the per-bin tile count.
+    Everything beyond ``cap`` meters is pooled into one catch-all bin so the
+    sparse long tail doesn't get its own noisy bins; its right edge is labeled
+    with the actual maximum distance. Bins with fewer than ``min_count`` tiles
+    are dropped. The two axes are expected to share an x-axis.
     """
     df = df.copy()
     bin_km = bin_width / 1000
@@ -180,40 +187,93 @@ def plot_distance_curve(df, title, save_path=None, bin_width=20000, min_count=2,
     right_edges = np.append(reg_edges[1:], cap_km + bin_km)
     centers_km = (left_edges + right_edges) / 2
 
-    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 5),
-                            gridspec_kw={"height_ratios": [3, 1]})
-    fig.suptitle(title, fontsize=13, fontweight="bold")
+    ax_f1.plot(centers_km, f1.values, marker="o", color="tab:blue", zorder=3)
+    ax_f1.set_ylabel("F1 score")
+    ax_f1.set_ylim(0, 1.05)
+    ax_f1.grid(axis="y", alpha=0.3)
 
-    ax = axs[0]
-    ax.plot(centers_km, f1.values, marker="o", color="tab:blue", zorder=3)
-    ax.set_ylabel("F1 score")
-    ax.set_ylim(0, 1.05)
-    ax.grid(axis="y", alpha=0.3)
-
-    ax2 = axs[1]
-    ax2.bar(centers_km, count.values, width=bin_km * 0.9,
-            color="0.6", edgecolor="white", zorder=3)
-    ax2.set_ylabel("Tile count")
-    ax2.set_xlabel("Distance to nearest training tile (km)")
-    ax2.grid(axis="y", alpha=0.3)
+    ax_count.bar(centers_km, count.values, width=bin_km * 0.9,
+                 color="0.6", edgecolor="white", zorder=3)
+    ax_count.set_ylabel("Tile count")
+    ax_count.set_xlabel(xlabel)
+    ax_count.grid(axis="y", alpha=0.3)
 
     # Ticks at the regular bin edges only; clip to the range of populated bins.
     kept = np.flatnonzero(enough.values)
     left, right = left_edges[kept[0]], right_edges[kept[-1]]
-    ax2.set_xticks([e for e in reg_edges if left <= e <= right])
-    ax2.set_xlim(left, right)
-    # Label the catch-all bin with centered text (no tick mark in its middle).
+    ticks = [e for e in reg_edges if left <= e <= right]
+    labels = [f'{int(e)}' for e in ticks]
+    # Label the right edge of the catch-all bin with the actual maximum
+    # distance present in the data, rather than a ">cap" bin.
     if right > cap_km:
-        pad = plt.rcParams['xtick.major.pad']
-        ax2.annotate(f'>{int(cap_km)}', xy=(centers_km[-1], 0),
-                     xycoords=('data', 'axes fraction'),
-                     xytext=(0, -pad), textcoords='offset points',
-                     ha='center', va='top', fontsize=plt.rcParams['xtick.labelsize'])
+        ticks.append(right_edges[-1])
+        labels.append(f'{int(round(dist_km.max()))}\n(max)')
+    ax_count.set_xticks(ticks)
+    ax_count.set_xticklabels(labels)
+    ax_count.set_xlim(left, right)
+
+
+def plot_distance_curve(df, title, save_path=None, bin_width=20000, min_count=1,
+                        cap=200000):
+    """Plot a micro-averaged F1 vs distance-to-nearest-training-tile curve.
+
+    See ``_draw_distance_panels`` for the binning/pooling details. The lower
+    panel shows the per-bin tile count.
+    """
+    fig, axs = plt.subplots(2, 1, sharex=True, figsize=(7, 5),
+                            gridspec_kw={"height_ratios": [3, 1]})
+    fig.suptitle(title, fontsize=13, fontweight="bold")
+    _draw_distance_panels(df, axs[0], axs[1],
+                          "Distance to nearest training tile (km)",
+                          bin_width=bin_width, min_count=min_count, cap=cap)
 
     fig.tight_layout()
     if save_path is not None:
         fig.savefig(save_path, dpi=200, bbox_inches='tight')
         plt.close(fig)
+    else:
+        fig.show()
+    return fig
+
+
+def plot_distance_figure(per_image_df, label, locations_csv=LOCATIONS_CSV,
+                         fig_dir=None, proj_crs=DIST_PROJ_CRS,
+                         bin_width=20000, min_count=1):
+    """One publication figure per sensor: test-tile F1 vs distance to the nearest
+    *training* tile (left column) and to the nearest *validation* tile (right
+    column). Each column is an F1 curve over a tile-count panel.
+
+    Panels carry no titles; they are tagged ``(a)``-``(d)`` in their top-left
+    corners, in column-major order (top-left, bottom-left, top-right, bottom-
+    right). Saved as ``distance_figure_{label}.jpg`` when ``fig_dir`` is given.
+    """
+    _, test_df, test_val_df = build_distance_dfs(per_image_df, locations_csv, proj_crs)
+
+    fig, axs = plt.subplots(2, 2, sharex="col", figsize=(12, 5),
+                            gridspec_kw={"height_ratios": [3, 1]})
+    columns = [
+        (test_df, "Distance to nearest training tile (km)", 100000),
+        (test_val_df, "Distance to nearest validation tile (km)", 200000),
+    ]
+    for col, (df, xlabel, cap) in enumerate(columns):
+        _draw_distance_panels(df, axs[0, col], axs[1, col], xlabel,
+                              bin_width=bin_width, min_count=min_count, cap=cap)
+
+    # Tag panels (a)-(d) in column-major order: top-left, bottom-left, top-right,
+    # bottom-right.
+    panel_axes = [axs[0, 0], axs[1, 0], axs[0, 1], axs[1, 1]]
+    for ax, tag in zip(panel_axes, 'abcd'):
+        ax.text(0.02, 0.95, f'({tag})', transform=ax.transAxes,
+                ha='left', va='top', fontweight='bold', fontsize=12)
+
+    fig.tight_layout()
+    if fig_dir is not None:
+        os.makedirs(fig_dir, exist_ok=True)
+        slug = label.lower().replace(' ', '_')
+        save_path = os.path.join(fig_dir, f'distance_figure_{slug}.jpg')
+        fig.savefig(save_path, dpi=200, bbox_inches='tight')
+        plt.close(fig)
+        print(f'  wrote {save_path}')
     else:
         fig.show()
     return fig

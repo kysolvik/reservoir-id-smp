@@ -121,6 +121,7 @@ def plot_distance_curves():
     per_image = pd.concat([pd.read_csv(p) for p in existing], ignore_index=True)
     print('\n===== distance curves =====')
     eval_helpers.plot_distance_curves(per_image, label='Sentinel', fig_dir=FIG_DIR)
+    eval_helpers.plot_distance_figure(per_image, label='Sentinel', fig_dir=FIG_DIR)
 
 
 def main():

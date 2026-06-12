@@ -41,7 +41,7 @@ from _helper_model import ResModel
 # ---------------------------------------------------------------------------
 # Run settings
 # ---------------------------------------------------------------------------
-RUN_LIST = ['ls8_2017_30m']
+RUN_LIST = ['ls8_2017_bilinear']
 SPLITS = ['val', 'test']      # splits to predict on (e.g. add 'train')
 SAVE_MASKS = True             # write ground-truth masks once per split
 FIT_QUANTIZE = False          # re-fit the quantized Landsat model (slow); else load
@@ -90,7 +90,7 @@ CONFIGS = {
     # landsat_threshold_calcs.py. 'bilinear' shares the 500x500 masks; the native
     # 30m grid has a smaller 166x166 mask, written to its own {split}_masks_30m.npy.
     'ls8_2017_bilinear': {
-        'checkpoint': LANDSAT_CKPT,
+        'checkpoint': './models/best/ls8_bilinear_v2.ckpt',
         'data_dir': './data/landsat8_2017_v9_bilinear',
         'mean_std': './data/mean_stds/mean_std_ls8_2017_v9_bilinear.npy',
         'in_channels': 6,

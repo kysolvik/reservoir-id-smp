@@ -23,7 +23,7 @@ cutoff_dict = {
         }
 base_cutoff = cutoff_dict[base_ls_name]
 comp_cutoff = cutoff_dict[comp_ls_name]
-box_size = 10000
+box_size = 25000
 
 out_csv_base_overlaps = os.path.join('./out/', os.path.basename(base_tif).replace(
     '.tif', '_{}_overlaps.csv'.format(comp_ls_name)))
@@ -79,8 +79,8 @@ for i in range(start_ind.shape[0]):
     comp_mask = comp_ar != 255
     base_mask = base_ar != 255
     full_mask = comp_mask*base_mask
-    base_ar = (base_ar >= base_cutoff)*full_mask
-    comp_ar = (comp_ar >= comp_cutoff)*full_mask
+    base_ar = (base_ar > base_cutoff)*base_mask
+    comp_ar = (comp_ar > comp_cutoff)*comp_mask
 
     tp, fp, fn = calc_stats(base_ar, comp_ar)
     out_dict = {

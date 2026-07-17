@@ -430,6 +430,7 @@ def get_size_stats_dict(truth_masks, pred_masks, pred_thresh):
 
 
 def process_size_stats(true_df, pred_df, size_dict):
+    all_dicts = []
     for size_class, sizes in size_dict.items():
         temp_true = true_df.loc[(true_df['size']>sizes[0])&(true_df['size']<=sizes[1])]
         temp_pred = pred_df.loc[(pred_df['size']>sizes[0])&(pred_df['size']<=sizes[1])]
@@ -438,11 +439,12 @@ def process_size_stats(true_df, pred_df, size_dict):
             'total_true':temp_true.shape[0],
             'total_pred': temp_pred.shape[0],
             'tp_true': temp_true['tp'].sum().item(),
-            'tp_pred': temp_pred['tp'].sum().item(),
-            'precision': temp_pred['tp'].sum().item() / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0,
-            'recall': temp_true['tp'].sum().item() / temp_true.shape[0] if temp_true.shape[0]>0 else 0,
+            'tp_pred': temp_pred['tp'].sum().item()
         }
+        out_dict['precision'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0
+        out_dict['recall'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_true.shape[0] if temp_true.shape[0]>0 else 0
         print(out_dict)
+        all_dicts.append(out_dict)
     # Overall precision and recall
     smallest_size = list(size_dict.keys())[0]
     largest_size = list(size_dict.keys())[-1]
@@ -457,11 +459,15 @@ def process_size_stats(true_df, pred_df, size_dict):
         'total_true':temp_true.shape[0],
         'total_pred': temp_pred.shape[0],
         'tp_true': temp_true['tp'].sum().item(),
-        'tp_pred': temp_pred['tp'].sum().item(),
-        'precision': temp_pred['tp'].sum().item() / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0,
-        'recall': temp_true['tp'].sum().item() / temp_true.shape[0] if temp_true.shape[0]>0 else 0,
-    }
+        'tp_pred': temp_pred['tp'].sum().item()
+        }
+    out_dict['precision'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0
+    out_dict['recall'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_true.shape[0] if temp_true.shape[0]>0 else 0
     print(out_dict)
+    all_dicts.append(out_dict)
+    full_df = pd.DataFrame(all_dicts)
+    return full_df
+    
 
 
 
@@ -539,7 +545,8 @@ def report_object_stats(truth, preds, best_cutoff):
                             'tp': np.array(size_stats_dict['pred_assessment'])})
     true_df = pd.DataFrame({'size': np.array(size_stats_dict['truth_sizes']),
                             'tp': np.array(size_stats_dict['truth_assessment'])})
-    process_size_stats(true_df, pred_df, SIZE_DICT)
+    full_df = process_size_stats(true_df, pred_df, SIZE_DICT)
+    return full_df
 
 
 def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=True, best_cutoff=0.5, crop_to_400=False):
@@ -556,6 +563,7 @@ def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=
     print('Final pixel-wise stats:', compute_stats(truth, preds, cutoff=best_cutoff))
 
     # Object-level and size-binned stats
-    report_object_stats(truth, preds, best_cutoff)
+    object_df = report_object_stats(truth, preds, best_cutoff)
+    object_df.to_csv(per_image_csv.replace('per_image.csv', 'object_stats.csv'), index=False)
 
     per_image_stats(preds, truth, img_dir, best_cutoff=best_cutoff).to_csv(per_image_csv, index=False)

@@ -69,8 +69,8 @@ def main():
         df = pd.read_csv(csv)
         df = process_df(df, csv, clip_polygon)
         write_to_csv(df, args.output_dir)
-#         if not (df['satellite'].values[0] == 'ls7' and df['year'].values[0] > 2019):
-#             append_to_parquet(df, out_path_parquet)
+        if not (df['satellite'].values[0] == 'ls7' and df['year'].values[0] > 2019):
+            append_to_parquet(df, out_path_parquet)
 
 
 if __name__ == '__main__':

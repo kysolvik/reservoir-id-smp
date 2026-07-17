@@ -1,243 +1,304 @@
-#! /usr/env/bin python
+#!/usr/bin/env python
+"""Run and save post-training predictions for the reservoir segmentation models.
+
+Unified prediction step for both the Sentinel model and every Landsat
+sensor/year model. For each entry in ``CONFIGS`` and each split in ``SPLITS``
+it loads the checkpoint, predicts on the split, and writes the prediction
+arrays (and, once per split, the ground-truth masks) to ``PRED_DIR`` as ``.npy``.
+
+Landsat entries additionally produce quantized (neural_compressor) predictions,
+which are what ``landsat_threshold_calcs.py`` and ``landsat_eval.py`` consume.
+
+Edit the flags and ``CONFIGS`` table below, then run:
+
+    python predict_train_val_test.py
+
+Configs whose checkpoint / data_dir / mean_std are missing on disk are skipped
+with a warning, so the loop is safe to run even when only some sensors' data
+is available locally.
+"""
 
 import os
-from skimage import io
+
 import numpy as np
-import matplotlib.pyplot as plt
-import pytorch_lightning as pl
-import albumentations as albu
-from torch.utils.data import DataLoader
-from torch.utils.data import Dataset as BaseDataset
 import torch
-import numpy as np
+from torch.utils.data import DataLoader
+import pytorch_lightning as pl
 import segmentation_models_pytorch as smp
-import torchvision
-import subprocess as sp
-from scipy import ndimage
 
-SPLIT = 'test'
-
-# Set params
-mean_std = np.load('./data/mean_stds/mean_std_sentinel_v12.npy')
-DATA_DIR = './data/reservoirs_10band/'
-save_truth=True
-TRUE_NPY = f'./data/preds/reservoirs_10band_masks_{SPLIT}.npy'
-
-# Replace val with train or test to predict on those
-x_valid_dir = os.path.join(DATA_DIR, f'img_dir/{SPLIT}')
-y_valid_dir = os.path.join(DATA_DIR, f'ann_dir/{SPLIT}')
-PRED_NPY = f'./data/preds/reservoirs_10band_manet_datav12_modelv6_{SPLIT}.npy'
-checkpoint_path = './models/best/sentinel_datav12_modelv6.ckpt'
-
-def to_tensor(x, **kwargs):
-    return x.transpose(2, 0, 1).astype('float32')
-
-def get_preprocessing():
-    """Construct preprocessing transform
-
-    Args:
-        preprocessing_fn (callbale): data normalization function
-            (can be specific for each pretrained neural network)
-    Return:
-        tranform: albumentations.Compose
-    """
-
-    _transform = [
-        albu.Lambda(image=to_tensor, mask=to_tensor),
-    ]
-    return albu.Compose(_transform, is_check_shapes=False)
-
-def normalize_image(ar, mean_std):
-    return (ar - mean_std[0])/mean_std[1]
-
-class Dataset(BaseDataset):
-    """
-
-    Args:
-        images_dir (str): path to images folder
-        masks_dir (str): path to segmentation masks folder
-        class_values (list): values of classes to extract from segmentation mask
-        augmentation (albumentations.Compose): data transfromation pipeline
-            (e.g. flip, scale, etc.)
-        preprocessing (albumentations.Compose): data preprocessing
-            (e.g. noralization, shape manipulation, etc.)
-
-    """
-
-    CLASSES = ['background', 'water']
-
-    def __init__(
-            self,
-            images_dir,
-            masks_dir,
-            classes=None,
-            augmentation=None,
-            preprocessing=None,
-            mean_std = None
-    ):
-        self.ids = sorted(os.listdir(images_dir))
-        self.images_fps = [os.path.join(images_dir, image_id) for image_id in self.ids]
-        self.masks_fps = [os.path.join(masks_dir, image_id.replace('.tif', '.png')) for image_id in self.ids]
-
-        # convert str names to class values on masks
-        self.class_values = [self.CLASSES.index(cls.lower()) for cls in classes]
-
-        self.augmentation = augmentation
-        self.preprocessing = preprocessing
-        self.mean_std = mean_std
-
-    def __getitem__(self, i):
-
-        # read data
-        image = io.imread(self.images_fps[i])
-        if self.mean_std is not None:
-            image = normalize_image(image, self.mean_std)
-        mask = io.imread(self.masks_fps[i])
-
-        # extract certain classes from mask (e.g. cars)
-        masks = [(mask == v) for v in self.class_values]
-        mask = np.stack(masks, axis=-1).astype('float')
-
-        # apply augmentations
-        if self.augmentation:
-            sample = self.augmentation(image=image, mask=mask)
-            image, mask = sample['image'], sample['mask']
-
-        # apply preprocessing
-        if self.preprocessing:
-            sample = self.preprocessing(image=image, mask=mask)
-            image, mask = sample['image'], sample['mask']
-
-        #Convert to PIL
-        return {'image':image, 'mask':mask}
-
-    def __len__(self):
-        return len(self.ids)
-
-class ResModel(pl.LightningModule):
-
-    def __init__(self, arch, encoder_name, in_channels, out_classes, **kwargs):
-        super().__init__()
-        self.model = smp.MAnet(encoder_name="resnet34", in_channels=in_channels, classes=out_classes,
-                               encoder_weights=None,
-                                      aux_params=dict(
-                                          classes=1,
-                                          dropout=0.2
-                                      )
-        )
-
-
-        self.loss_fn = smp.losses.DiceLoss(smp.losses.BINARY_MODE, from_logits=True)
-
-        self.crop_transform = torchvision.transforms.CenterCrop(500)
-
-    def forward(self, image):
-        mask = self.model(image)[0]
-        return self.crop_transform(mask)
-
-    def shared_step(self, batch, stage):
-
-        image = batch["image"]
-
-        # Shape of the image should be (batch_size, num_channels, height, width)
-        # if you work with grayscale images, expand channels dim to have [batch_size, 1, height, width]
-        assert image.ndim == 4
-
-        # Check that image dimensions are divisible by 32,
-        # encoder and decoder connected by `skip connections` and usually encoder have 5 stages of
-        # downsampling by factor 2 (2 ^ 5 = 32); e.g. if we have image with shape 65x65 we will have
-        # following shapes of features in encoder and decoder: 84, 42, 21, 10, 5 -> 5, 10, 20, 40, 80
-        # and we will get an error trying to concat these features
-        h, w = image.shape[2:]
-        assert h % 32 == 0 and w % 32 == 0
-
-        mask = batch["mask"]
-
-        # Shape of the mask should be [batch_size, num_classes, height, width]
-        # for binary segmentation num_classes = 1
-        assert mask.ndim == 4
-
-        # Check that mask values in between 0 and 1, NOT 0 and 255 for binary segmentation
-        assert mask.max() <= 1.0 and mask.min() >= 0
-
-        logits_mask = self.forward(image)
-        loss = self.loss_fn(logits_mask, mask)
-
-        prob_mask = logits_mask.sigmoid()
-        pred_mask = (prob_mask > 0.5).float()
-
-        tp, fp, fn, tn = smp.metrics.get_stats(pred_mask.long(), mask.long(), mode="binary")
-
-        return {
-            "loss": loss,
-            "tp": tp,
-            "fp": fp,
-            "fn": fn,
-            "tn": tn,
-        }
-
-    def shared_epoch_end(self, outputs, stage):
-        # aggregate step metics
-        tp = torch.cat([x["tp"] for x in outputs])
-        fp = torch.cat([x["fp"] for x in outputs])
-        fn = torch.cat([x["fn"] for x in outputs])
-        tn = torch.cat([x["tn"] for x in outputs])
-
-        per_image_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro-imagewise")
-
-        dataset_iou = smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro")
-
-        metrics = {
-            f"{stage}_per_image_iou": per_image_iou,
-            f"{stage}_dataset_iou": dataset_iou,
-        }
-
-        self.log_dict(metrics, prog_bar=True)
-
-    def training_step(self, batch, batch_idx):
-        return self.shared_step(batch, "train")
-
-    def training_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "train")
-
-    def validation_step(self, batch, batch_idx):
-        return self.shared_step(batch, "valid")
-
-    def validation_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "valid")
-
-    def test_step(self, batch, batch_idx):
-        return self.shared_step(batch, "test")
-
-    def test_epoch_end(self, outputs):
-        return self.shared_epoch_end(outputs, "test")
-
-    def predict_step(self, batch, batch_idx, dataloader_idx=0):
-        return self(batch['image']).sigmoid()
-
-    def configure_optimizers(self):
-        optim = torch.optim.Adam(self.parameters(), lr=0.0001)
-        return [optim], [torch.optim.lr_scheduler.ExponentialLR(optim, 0.95)]
-
-model =  ResModel.load_from_checkpoint(checkpoint_path, in_channels=10, out_classes=1, arch='MAnet',
-                                       encoder_name='resnet34', map_location=torch.device('cpu'))
-
-CLASSES = ['Water']
-
-valid_dataset = Dataset(
-    x_valid_dir,
-    y_valid_dir,
-    preprocessing=get_preprocessing(),
-    classes=CLASSES,
-    mean_std=mean_std,
+from neural_compressor.utils.pytorch import load
+from neural_compressor.config import (
+    PostTrainingQuantConfig,
+    TuningCriterion,
+    AccuracyCriterion,
 )
+from neural_compressor.quantization import fit
 
-valid_loader = DataLoader(valid_dataset, batch_size=4, shuffle=False, num_workers=2)
+from _helper_datasets import Dataset, DatasetImageOnly, get_preprocessing
+from _helper_model import ResModel
 
-trainer = pl.Trainer()
-preds =  np.vstack(trainer.predict(model, valid_loader))[:,0 ,: ,: ]
-np.save(PRED_NPY, preds)
 
-if save_truth:
-    true_masks = np.vstack([valid_dataset[i]['mask'] for i in range(len(valid_dataset))])
-    np.save(TRUE_NPY, true_masks)
+# ---------------------------------------------------------------------------
+# Run settings
+# ---------------------------------------------------------------------------
+RUN_LIST = ['ls8_2017_bilinear']
+SPLITS = ['val', 'test']      # splits to predict on (e.g. add 'train')
+SAVE_MASKS = True             # write ground-truth masks once per split
+FIT_QUANTIZE = False          # re-fit the quantized Landsat model (slow); else load
+PRED_DIR = './data/preds'
+QUANT_MODEL_DIR = './models/best/quantized_model_l8/'  # shared Landsat quant model
+QUANT_FIT_SPLIT = 'val'       # split used to calibrate/eval when FIT_QUANTIZE
+
+BATCH_SIZE = 4
+NUM_WORKERS = 2
+ENCODER_NAME = 'resnet34'
+
+# Shared Landsat checkpoint, applied to each sensor's imagery with a
+# sensor-specific mean_std for normalization.
+SENTINEL_CKPT = './models/best/sentinel_datav12_modelv6.ckpt'
+LANDSAT_CKPT = './models/best/l8_sr_v21.ckpt'
+
+# ---------------------------------------------------------------------------
+# Per-model configuration. Output templates use {split}. Paths are relative to
+# the train/ directory; adjust data_dir / mean_std to match your local layout.
+# ---------------------------------------------------------------------------
+CONFIGS = {
+    'sentinel': {
+        'checkpoint': SENTINEL_CKPT,
+        'data_dir': './data/reservoirs_10band',
+        'mean_std': './data/mean_stds/mean_std_sentinel_v12.npy',
+        'in_channels': 10,
+        'center_crop': 500,
+        'quantize': False,
+        'og_out': 'reservoirs_10band_manet_datav12_modelv6_{split}.npy',
+        'quant_out': None,
+        'masks_out': 'reservoirs_10band_masks_{split}.npy',
+    },
+    'ls8_2017': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat8_2017_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls8_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls8_2017_preds_{split}_og.npy',
+        'quant_out': 'ls8_2017_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    # Resampling-method comparisons against the ls8_2017 baseline (nearest-neighbor
+    # 'sr'). These reuse the LS8 cutoff, so they are not calibrated in
+    # landsat_threshold_calcs.py. 'bilinear' shares the 500x500 masks; the native
+    # 30m grid has a smaller 166x166 mask, written to its own {split}_masks_30m.npy.
+    'ls8_2017_bilinear': {
+        'checkpoint': './models/best/ls8_bilinear_v2.ckpt',
+        'data_dir': './data/landsat8_2017_v9_bilinear',
+        'mean_std': './data/mean_stds/mean_std_ls8_2017_v9_bilinear.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls8_2017_bilinear_preds_{split}_og.npy',
+        'quant_out': 'ls8_2017_bilinear_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    'ls8_2017_30m': {
+        'checkpoint': './models/best/ls8_30m_v2.ckpt',
+        'data_dir': './data/landsat8_2017_v9_30m',
+        'mean_std': './data/mean_stds/mean_std_ls8_2017_v9_30m.npy',
+        'in_channels': 6,
+        'center_crop': 166,
+        'quantize': False,
+        'og_out': 'ls8_2017_30m_preds_{split}_og.npy',
+        'quant_out': 'ls8_2017_30m_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks_30m.npy',
+    },
+    'ls8_2022': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat8_2022_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls8_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls8_2022_preds_{split}_og.npy',
+        'quant_out': 'ls8_2022_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    'ls9_2022': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat9_2022_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls9_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls9_2022_preds_{split}_og.npy',
+        'quant_out': 'ls9_2022_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    'ls7_2017': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat7_2017_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls7_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls7_2017_preds_{split}_og.npy',
+        'quant_out': 'ls7_2017_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    'ls7_2010': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat7_2010_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls7_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls7_2010_preds_{split}_og.npy',
+        'quant_out': 'ls7_2010_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+    'ls5_2010': {
+        'checkpoint': LANDSAT_CKPT,
+        'data_dir': './data/landsat5_2010_v9_sr',
+        'mean_std': './data/mean_stds/mean_std_ls5_v9.npy',
+        'in_channels': 6,
+        'center_crop': 500,
+        'quantize': True,
+        'og_out': 'ls5_2010_preds_{split}_og.npy',
+        'quant_out': 'ls5_2010_preds_{split}_quant.npy',
+        'masks_out': '{split}_masks.npy',
+    },
+}
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+def build_model(cfg):
+    """Load a ResModel from a checkpoint for prediction (weights on CPU)."""
+    return ResModel.load_from_checkpoint(
+        cfg['checkpoint'],
+        in_channels=cfg['in_channels'],
+        out_classes=1,
+        arch='',
+        center_crop=cfg['center_crop'],
+        encoder_name=ENCODER_NAME,
+        map_location=torch.device('cpu'),
+    )
+
+
+def make_dataset(cfg, mean_std, img_dir, ann_dir, image_only=False):
+    cls = DatasetImageOnly if image_only else Dataset
+    return cls(
+        img_dir,
+        ann_dir,
+        preprocessing=get_preprocessing(),
+        classes=['water'],
+        mean_std=mean_std,
+    )
+
+
+def predict(model, loader, trainer):
+    """Return stacked sigmoid predictions of shape (n, h, w)."""
+    return np.vstack(trainer.predict(model, loader))[:, 0, :, :]
+
+
+def compute_masks(dataset):
+    """Stack ground-truth masks from a (with-mask) Dataset into (n, h, w)."""
+    return np.vstack([dataset[i]['mask'] for i in range(len(dataset))])
+
+
+def make_quant_model(cfg, mean_std, trainer, fit_quant=False):
+    """Build a Landsat model with quantized weights loaded from QUANT_MODEL_DIR.
+
+    When ``fit_quant`` is True the quantized model is first re-fit with
+    neural_compressor using the QUANT_FIT_SPLIT data, then saved. A separate
+    model instance is returned so the original (float) model is never mutated.
+    """
+    qmodel = build_model(cfg)
+
+    if fit_quant:
+        img_dir = os.path.join(cfg['data_dir'], f'img_dir/{QUANT_FIT_SPLIT}')
+        ann_dir = os.path.join(cfg['data_dir'], f'ann_dir/{QUANT_FIT_SPLIT}')
+        calib_ds = make_dataset(cfg, mean_std, img_dir, ann_dir, image_only=True)
+        calib_loader = DataLoader(calib_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+        mask_ds = make_dataset(cfg, mean_std, img_dir, ann_dir)
+        mask_loader = DataLoader(mask_ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+        masks = torch.Tensor(compute_masks(mask_ds)).long()
+
+        def eval_func(candidate_model):
+            qmodel.model = candidate_model
+            preds = predict(qmodel, mask_loader, trainer)
+            tp, fp, fn, tn = smp.metrics.get_stats(
+                torch.Tensor(preds > 0.5).long(), masks, mode="binary")
+            return float(smp.metrics.iou_score(tp, fp, fn, tn, reduction="micro"))
+
+        conf = PostTrainingQuantConfig(
+            approach="auto",
+            backend="default",
+            tuning_criterion=TuningCriterion(max_trials=5),
+            accuracy_criterion=AccuracyCriterion(tolerable_loss=0.01),
+        )
+        q_model = fit(model=build_model(cfg).model, conf=conf,
+                      calib_dataloader=calib_loader, eval_func=eval_func)
+        q_model.save(QUANT_MODEL_DIR)
+
+    qmodel.model = load(QUANT_MODEL_DIR, qmodel.model)
+    return qmodel
+
+
+def missing_paths(cfg):
+    return [p for p in (cfg['checkpoint'], cfg['data_dir'], cfg['mean_std'])
+            if not os.path.exists(p)]
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+def main():
+    os.makedirs(PRED_DIR, exist_ok=True)
+    saved_masks = set()  # mask output paths already written this run
+
+    for name in RUN_LIST:
+        cfg = CONFIGS[name]
+        missing = missing_paths(cfg)
+        if missing:
+            print(f'[skip] {name}: missing {missing}')
+            continue
+
+        print(f'[run]  {name}')
+        mean_std = np.load(cfg['mean_std'])
+        model = build_model(cfg)
+        trainer = pl.Trainer()
+
+        qmodel = None
+        if cfg['quantize']:
+            qmodel = make_quant_model(cfg, mean_std, trainer, fit_quant=FIT_QUANTIZE)
+
+        for split in SPLITS:
+            img_dir = os.path.join(cfg['data_dir'], f'img_dir/{split}')
+            ann_dir = os.path.join(cfg['data_dir'], f'ann_dir/{split}')
+            if not os.path.isdir(img_dir):
+                print(f'  [skip] {name}/{split}: no {img_dir}')
+                continue
+
+            ds = make_dataset(cfg, mean_std, img_dir, ann_dir)
+            loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=False, num_workers=NUM_WORKERS)
+
+            og_path = os.path.join(PRED_DIR, cfg['og_out'].format(split=split))
+            np.save(og_path, predict(model, loader, trainer))
+            print(f'  saved {og_path}')
+
+            if SAVE_MASKS:
+                masks_path = os.path.join(PRED_DIR, cfg['masks_out'].format(split=split))
+                if masks_path not in saved_masks:
+                    np.save(masks_path, compute_masks(ds))
+                    saved_masks.add(masks_path)
+                    print(f'  saved {masks_path}')
+
+            if cfg['quantize'] and cfg['quant_out'] is not None:
+                quant_path = os.path.join(PRED_DIR, cfg['quant_out'].format(split=split))
+                np.save(quant_path, predict(qmodel, loader, trainer))
+                print(f'  saved {quant_path}')
+
+
+if __name__ == '__main__':
+    main()

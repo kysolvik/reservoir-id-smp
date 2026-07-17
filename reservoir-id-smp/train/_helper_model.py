@@ -7,10 +7,15 @@ import pytorch_lightning as pl
 
 class ResModel(pl.LightningModule):
 
-    def __init__(self, arch, encoder_name, in_channels, out_classes, center_crop, **kwargs):
+    def __init__(self, arch, encoder_name, in_channels, out_classes, center_crop,
+                 encoder_weights=None, **kwargs):
         super().__init__()
         self.center_crop = center_crop
+        # encoder_weights defaults to None so loading a checkpoint for prediction
+        # does not trigger an imagenet weight download; training callers can pass
+        # encoder_weights='imagenet'.
         self.model = smp.MAnet(encoder_name=encoder_name, in_channels=in_channels, classes=out_classes,
+                                      encoder_weights=encoder_weights,
                                       aux_params=dict(
                                           classes=1,
                                       )

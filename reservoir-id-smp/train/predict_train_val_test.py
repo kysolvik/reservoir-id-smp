@@ -41,7 +41,7 @@ from _helper_model import ResModel
 # ---------------------------------------------------------------------------
 # Run settings
 # ---------------------------------------------------------------------------
-RUN_LIST = ['ls8_2017_bilinear']
+RUN_LIST = ['sentinel']
 SPLITS = ['val', 'test']      # splits to predict on (e.g. add 'train')
 SAVE_MASKS = True             # write ground-truth masks once per split
 FIT_QUANTIZE = False          # re-fit the quantized Landsat model (slow); else load
@@ -193,6 +193,7 @@ def make_dataset(cfg, mean_std, img_dir, ann_dir, image_only=False):
         preprocessing=get_preprocessing(),
         classes=['water'],
         mean_std=mean_std,
+        in_channels=cfg['in_channels'],
     )
 
 

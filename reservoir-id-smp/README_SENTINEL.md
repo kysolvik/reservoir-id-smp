@@ -1,6 +1,8 @@
 # Sentinel Workflow
 
-Full workflow for recreating modeling and analysis from Solvik et al., "Uncovering a million small reservoirs in Brazil using deep learning".
+Full workflow for recreating modeling and analysis from Solvik et al., 
+"Mapping one million small reservoirs in Brazil highlights widespread 
+environmental and policy implications"
 
 If not mentioned, not relevant to Sentinel analysis.
 
@@ -39,8 +41,13 @@ Prepare Sentinel dataset for training, including train/valid/test/split
 - C. sentinel_train.ipynb
 Notebook for training. For running on Google Colab.
 
-- D. sentinel_eval.ipynb
-Eval model performance on validation or test set.
+- D. predict_train_val_test.py
+Run and save post-training predictions (Sentinel + all Landsat sensors) for the
+train/val/test splits, including quantized Landsat predictions.
+
+- E. sentinel_eval.py
+Eval Sentinel model performance (pixel/object/size stats + figures) on the
+validation or test set.
 
 ### 4 - predict/
 

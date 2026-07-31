@@ -12,21 +12,23 @@ import os
 
 # Object-size classes (pixels) used for size-binned precision/recall reporting.
 # Shared by full_evaluation (Sentinel) and the Landsat threshold workflow.
-# SIZE_DICT = {
-#     'remove_xsmall': [0, 4],
-#     'very_small': [4, 10],
-#     'small': [10, 100],
-#     'medium': [100, 1000],
-#     'large': [1000, 5000],
-#     'remove_xlarge': [5000, 1000000],
-# }
+# Sentinel
 SIZE_DICT = {
-    'remove_xsmall': [0, 10],
+    'remove_xsmall': [0, 4],
+    'very_small': [4, 10],
     'small': [10, 100],
     'medium': [100, 1000],
-    'large': [1000, 10000],
-    'remove_xlarge': [10000, 1000000],
+    'large': [1000, 5000],
+    'remove_xlarge': [5000, 1000000],
 }
+# Landsat
+# SIZE_DICT = {
+#     'remove_xsmall': [0, 10],
+#     'small': [10, 100],
+#     'medium': [100, 1000],
+#     'large': [1000, 10000],
+#     'remove_xlarge': [10000, 1000000],
+# }
 
 
 def distance_to_nearest(gdf_target, gdf_training, k=1):
@@ -467,8 +469,6 @@ def process_size_stats(true_df, pred_df, size_dict):
     all_dicts.append(out_dict)
     full_df = pd.DataFrame(all_dicts)
     return full_df
-    
-
 
 
 def size_stats(truth_masks, pred_masks, size_min, size_max, pred_thresh=0.5):

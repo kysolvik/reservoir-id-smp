@@ -148,7 +148,7 @@ def scatter_plot_all_biomes(full_df, x_variable, y_variable,
         ax.set_ylabel(y_variable)
         ax.grid(True, alpha=0.3)
 
-    fig.suptitle(f'{y_variable} vs. {x_variable}', fontsize=16)
+    fig.suptitle(f'Total reservoir area vs. {x_variable}', fontsize=16)
     fig.tight_layout()
     plt.show()
 

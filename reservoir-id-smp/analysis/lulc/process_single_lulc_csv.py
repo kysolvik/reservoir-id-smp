@@ -13,7 +13,7 @@ mb_keys_dict = {
     'pasture': np.array([15]),
     'crop': np.array([18,19,39,20,40,62,41,36,46,47,35,48]),
     'mosaic': np.array([21]),
-    'other': np.array([23, 24, 30, 75, 25, 21, 9, 26, 31, 33])
+    'other': np.array([23, 24, 30, 75, 25, 9, 26, 31, 33])
 }
 
 def year_from_string(string):
@@ -35,7 +35,7 @@ def read_process_lulc_csv(csv):
 def summarize_lulc(year_df):
     out_df = pd.DataFrame()
     for lulc_class in mb_keys_dict.keys():
-        sum_of_class = year_df.loc[:, np.in1d(year_df.columns, mb_keys_dict[lulc_class])].sum(axis=1)
+        sum_of_class = year_df.loc[:, np.isin(year_df.columns, mb_keys_dict[lulc_class])].sum(axis=1)
         out_df[lulc_class] = sum_of_class
     out_df['other'] = year_df.sum(axis=1) - out_df.sum(axis=1)
     return out_df
@@ -54,7 +54,7 @@ def calc_lulc_full(df):
     return classes
 
 def process_lulc_csv(in_csv):
-    stats_to_save = pd.read_csv(in_csv).set_index('id_for_year_sat')
+    stats_to_save = pd.read_csv(in_csv).set_index('id_for_yea')
     print(stats_to_save)
     full_df = read_process_lulc_csv(in_csv)
     lulc_df = calc_lulc_full(full_df)

@@ -3,7 +3,12 @@
 Runs the full pixel-wise + object-level + size-binned evaluation (via
 ``_eval_helpers.full_evaluation``) on the Sentinel train/val/test predictions
 written by ``predict_train_val_test.py``, writes the per-image stat CSVs, and
-saves the training-progress / precision-recall figure.
+saves the training-progress / precision-recall figure plus the F1 vs
+distance-to-nearest-train/val-tile figures.
+
+Object-level stats are reported at each IoU matching threshold in
+``_eval_helpers.IOU_THRESHOLDS``: ``{split}_object_stats.csv`` (IoU > 0, any
+overlap) and ``{split}_object_stats_iou50.csv`` (IoU >= 0.5).
 
 Landsat evaluation now lives in ``landsat_eval.py`` (with cutoff calibration in
 ``landsat_threshold_calcs.py``).

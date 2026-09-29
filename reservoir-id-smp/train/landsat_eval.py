@@ -83,10 +83,12 @@ def report_object_stats(preds, cutoffs, split, get_masks):
         if p is None or c is None or masks_t is None:
             continue
         print(f'\n--- {s} ({split}) @ cutoff {c} ---')
-        object_df = eval_helpers.report_object_stats(masks_t, p, c)
-        object_csv = os.path.join(PRED_DIR, f'{s}_{split}_object_stats.csv')
-        object_df.to_csv(object_csv, index=False)
-        print(f'  wrote {object_csv}')
+        for t in eval_helpers.IOU_THRESHOLDS:
+            object_df = eval_helpers.report_object_stats(masks_t, p, c, iou_thresh=t)
+            suffix = eval_helpers.object_csv_suffix(t)
+            object_csv = os.path.join(PRED_DIR, f'{s}_{split}_object_stats{suffix}.csv')
+            object_df.to_csv(object_csv, index=False)
+            print(f'  wrote {object_csv}')
 
         img_dir = os.path.join(DATA_DIRS[s], f'img_dir/{split}')
         if os.path.isdir(img_dir):

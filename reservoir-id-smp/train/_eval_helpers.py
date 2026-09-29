@@ -30,6 +30,16 @@ SIZE_DICT = {
 #     'remove_xlarge': [10000, 1000000],
 # }
 
+# IoU thresholds for object matching. 0.0 means any overlap counts as a match
+# (the original behavior); 0.5 requires IoU >= 0.5 between truth and prediction.
+IOU_THRESHOLDS = (0.0, 0.5)
+
+
+def object_csv_suffix(iou_thresh):
+    """Filename suffix for object-stat CSVs: '' for IoU 0 (keeps the original
+    names), '_iou50' for 0.5, etc."""
+    return '' if iou_thresh == 0 else f'_iou{int(round(iou_thresh * 100))}'
+
 
 def distance_to_nearest(gdf_target, gdf_training, k=1):
 
@@ -389,7 +399,55 @@ def object_stats(truth_masks, pred_masks, pred_thresh=0.5):
     }
     return out_dict
 
-def get_size_stats_dict(truth_masks, pred_masks, pred_thresh):
+def match_objects(labeled_truth, n_truth, labeled_pred, n_pred, iou_thresh=0.0):
+    """One-to-one matching of labeled truth and predicted objects in one image.
+
+    All overlapping (truth, pred) pairs are ranked by IoU (highest first) and
+    accepted greedily when neither object is already matched and the IoU
+    passes ``iou_thresh`` (``> 0`` for 0, i.e. any overlap; ``>=`` otherwise).
+    Ranking globally, rather than walking truth objects in label order, stops a
+    small truth object that barely touches a large prediction from claiming it
+    ahead of the truth object it actually belongs to.
+
+    Returns:
+        (truth_matched, pred_matched, truth_sizes, pred_sizes): boolean match
+        flags and pixel areas, indexed by label - 1.
+    """
+    # Intersection counts for every (truth, pred) label pair in a single pass;
+    # row/column 0 is background, so the margins give the object areas.
+    pair_ids = labeled_truth.ravel().astype(np.int64) * (n_pred + 1) + labeled_pred.ravel()
+    inter = np.bincount(pair_ids, minlength=(n_truth + 1) * (n_pred + 1))
+    inter = inter.reshape(n_truth + 1, n_pred + 1)
+    truth_sizes = inter.sum(axis=1)[1:]
+    pred_sizes = inter.sum(axis=0)[1:]
+    inter = inter[1:, 1:]
+
+    truth_matched = np.zeros(n_truth, dtype=bool)
+    pred_matched = np.zeros(n_pred, dtype=bool)
+    ti, pj = np.nonzero(inter)
+    if len(ti) == 0:
+        return truth_matched, pred_matched, truth_sizes, pred_sizes
+    overlap = inter[ti, pj]
+    iou = overlap / (truth_sizes[ti] + pred_sizes[pj] - overlap)
+    # Highest IoU first; ties broken by larger overlap.
+    for k in np.lexsort((-overlap, -iou)):
+        t, p = ti[k], pj[k]
+        if truth_matched[t] or pred_matched[p]:
+            continue
+        if iou_thresh > 0 and iou[k] < iou_thresh:
+            break  # sorted descending, so no remaining pair can pass
+        truth_matched[t] = pred_matched[p] = True
+    return truth_matched, pred_matched, truth_sizes, pred_sizes
+
+
+def get_size_stats_dict(truth_masks, pred_masks, pred_thresh, iou_thresh=0.0):
+    """Match truth and predicted objects and record sizes + TP/FP/FN flags.
+
+    Objects are matched one-to-one per image by ``match_objects`` (global
+    greedy by IoU). With ``iou_thresh == 0`` any overlap can form a match;
+    otherwise a pair needs IoU >= ``iou_thresh``. Unmatched truth objects are
+    FNs and unmatched predictions are FPs.
+    """
     all_sizes_preds = []
     pred_assessment = []
     all_sizes_truth = []
@@ -397,31 +455,12 @@ def get_size_stats_dict(truth_masks, pred_masks, pred_thresh):
     for i in range(len(truth_masks)):
         labeled_truth, max_truth = get_objects(truth_masks[i])
         labeled_pred, max_pred = get_objects(pred_masks[i], pred_thresh)
-        for j in range(1, max_truth+1):
-            mask_truth = (labeled_truth==j)
-            all_sizes_truth.append(mask_truth.sum())
-            if np.max(labeled_pred * mask_truth) > 0:
-                truth_assessment.append(1) # TP
-                pred_assessment.append(1) # TP
-                # Find the max overlap
-                max_val = 0
-                max_overlap = 0
-                for val in np.unique(labeled_pred[(labeled_pred>0)&(mask_truth>0)]):
-                    overlap = np.sum((labeled_pred==val)*(mask_truth>0))
-                    if overlap > max_overlap:
-                        max_val = val
-                        max_overlap = overlap
-                all_sizes_preds.append(np.sum(labeled_pred==max_val))
-                # Remove that pred from the pool
-                labeled_pred[labeled_pred==max_val] = 0
-            else:
-                truth_assessment.append(0) # FN
-
-        for k in np.unique(labeled_pred):
-            if k != 0:
-                pred_assessment.append(0) # FPrange(1, max_pred+1):
-                mask_pred = (labeled_pred==k)
-                all_sizes_preds.append(mask_pred.sum())
+        truth_matched, pred_matched, truth_sizes, pred_sizes = match_objects(
+            labeled_truth, max_truth, labeled_pred, max_pred, iou_thresh)
+        all_sizes_truth.extend(truth_sizes.tolist())
+        truth_assessment.extend(truth_matched.astype(int).tolist())
+        all_sizes_preds.extend(pred_sizes.tolist())
+        pred_assessment.extend(pred_matched.astype(int).tolist())
 
     return {
         'truth_sizes': all_sizes_truth,
@@ -530,17 +569,24 @@ def pr_curve(preds_path, truth_path):
     return precision_recall_curve(truth, preds)
 
 
-def report_object_stats(truth, preds, best_cutoff):
+def report_object_stats(truth, preds, best_cutoff, iou_thresh=0.0):
     """Print object-level and size-binned precision/recall for one prediction set.
 
     Args:
         truth: ground-truth mask array/tensor (n, h, w).
         preds: float prediction array (n, h, w).
         best_cutoff: probability threshold used to binarize ``preds``.
+        iou_thresh: minimum IoU for a truth/pred object match (0 = any overlap).
     """
-    print('Object stats', object_stats(truth, preds, pred_thresh=best_cutoff))
+    if iou_thresh == 0:
+        # Object counts/areas don't depend on the matching threshold.
+        print('Object stats', object_stats(truth, preds, pred_thresh=best_cutoff))
+        print('--- object matching: IoU > 0 (any overlap) ---')
+    else:
+        print(f'--- object matching: IoU >= {iou_thresh} ---')
 
-    size_stats_dict = get_size_stats_dict(truth, preds, pred_thresh=best_cutoff)
+    size_stats_dict = get_size_stats_dict(truth, preds, pred_thresh=best_cutoff,
+                                          iou_thresh=iou_thresh)
     pred_df = pd.DataFrame({'size': np.array(size_stats_dict['pred_sizes']),
                             'tp': np.array(size_stats_dict['pred_assessment'])})
     true_df = pd.DataFrame({'size': np.array(size_stats_dict['truth_sizes']),
@@ -562,8 +608,11 @@ def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=
     print('Using cutoff:', best_cutoff)
     print('Final pixel-wise stats:', compute_stats(truth, preds, cutoff=best_cutoff))
 
-    # Object-level and size-binned stats
-    object_df = report_object_stats(truth, preds, best_cutoff)
-    object_df.to_csv(per_image_csv.replace('per_image.csv', 'object_stats.csv'), index=False)
+    # Object-level and size-binned stats, once per IoU matching threshold
+    for iou_thresh in IOU_THRESHOLDS:
+        object_df = report_object_stats(truth, preds, best_cutoff, iou_thresh=iou_thresh)
+        object_csv = per_image_csv.replace(
+            'per_image.csv', f'object_stats{object_csv_suffix(iou_thresh)}.csv')
+        object_df.to_csv(object_csv, index=False)
 
     per_image_stats(preds, truth, img_dir, best_cutoff=best_cutoff).to_csv(per_image_csv, index=False)

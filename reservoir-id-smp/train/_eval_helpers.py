@@ -10,10 +10,9 @@ from scipy import ndimage
 import os
 
 
-# Object-size classes (pixels) used for size-binned precision/recall reporting.
-# Shared by full_evaluation (Sentinel) and the Landsat threshold workflow.
-# Sentinel
-SIZE_DICT = {
+# Object-size classes (pixels) used for size-binned precision/recall reporting,
+# per sensor.
+SIZE_DICT_SENTINEL = {
     'remove_xsmall': [0, 4],
     'very_small': [4, 10],
     'small': [10, 100],
@@ -21,14 +20,15 @@ SIZE_DICT = {
     'large': [1000, 5000],
     'remove_xlarge': [5000, 1000000],
 }
-# Landsat
-# SIZE_DICT = {
-#     'remove_xsmall': [0, 10],
-#     'small': [10, 100],
-#     'medium': [100, 1000],
-#     'large': [1000, 10000],
-#     'remove_xlarge': [10000, 1000000],
-# }
+SIZE_DICT_LANDSAT = {
+    'remove_xsmall': [0, 10],
+    'small': [10, 100],
+    'medium': [100, 1000],
+    'large': [1000, 10000],
+    'remove_xlarge': [10000, 1000000],
+}
+# Default (Sentinel); also imported by analysis/uncertainty.
+SIZE_DICT = SIZE_DICT_SENTINEL
 
 # IoU thresholds for object matching. 0.0 means any overlap counts as a match
 # (the original behavior); 0.5 requires IoU >= 0.5 between truth and prediction.
@@ -410,8 +410,10 @@ def match_objects(labeled_truth, n_truth, labeled_pred, n_pred, iou_thresh=0.0):
     ahead of the truth object it actually belongs to.
 
     Returns:
-        (truth_matched, pred_matched, truth_sizes, pred_sizes): boolean match
-        flags and pixel areas, indexed by label - 1.
+        (truth_match, pred_matched, truth_sizes, pred_sizes): ``truth_match[t]``
+        is the index of the prediction matched to truth object ``t`` (-1 if
+        none), ``pred_matched`` boolean flags, and pixel areas; all indexed by
+        label - 1.
     """
     # Intersection counts for every (truth, pred) label pair in a single pass;
     # row/column 0 is background, so the margins give the object areas.
@@ -422,91 +424,102 @@ def match_objects(labeled_truth, n_truth, labeled_pred, n_pred, iou_thresh=0.0):
     pred_sizes = inter.sum(axis=0)[1:]
     inter = inter[1:, 1:]
 
-    truth_matched = np.zeros(n_truth, dtype=bool)
+    truth_match = np.full(n_truth, -1)
     pred_matched = np.zeros(n_pred, dtype=bool)
     ti, pj = np.nonzero(inter)
     if len(ti) == 0:
-        return truth_matched, pred_matched, truth_sizes, pred_sizes
+        return truth_match, pred_matched, truth_sizes, pred_sizes
     overlap = inter[ti, pj]
     iou = overlap / (truth_sizes[ti] + pred_sizes[pj] - overlap)
     # Highest IoU first; ties broken by larger overlap.
     for k in np.lexsort((-overlap, -iou)):
         t, p = ti[k], pj[k]
-        if truth_matched[t] or pred_matched[p]:
+        if truth_match[t] >= 0 or pred_matched[p]:
             continue
         if iou_thresh > 0 and iou[k] < iou_thresh:
             break  # sorted descending, so no remaining pair can pass
-        truth_matched[t] = pred_matched[p] = True
-    return truth_matched, pred_matched, truth_sizes, pred_sizes
+        truth_match[t] = p
+        pred_matched[p] = True
+    return truth_match, pred_matched, truth_sizes, pred_sizes
 
 
-def get_size_stats_dict(truth_masks, pred_masks, pred_thresh, iou_thresh=0.0):
-    """Match truth and predicted objects and record sizes + TP/FP/FN flags.
+def get_object_table(truth_masks, pred_masks, pred_thresh, iou_thresh=0.0,
+                     size_dict=SIZE_DICT):
+    """Match truth and predicted objects and return one row per outcome.
 
     Objects are matched one-to-one per image by ``match_objects`` (global
     greedy by IoU). With ``iou_thresh == 0`` any overlap can form a match;
-    otherwise a pair needs IoU >= ``iou_thresh``. Unmatched truth objects are
-    FNs and unmatched predictions are FPs.
+    otherwise a pair needs IoU >= ``iou_thresh``.
+
+    Returns a DataFrame with columns ``outcome`` ('tp'/'fn'/'fp'),
+    ``truth_size`` and ``pred_size`` (NaN where absent). TP rows carry both
+    sizes.
     """
-    all_sizes_preds = []
-    pred_assessment = []
-    all_sizes_truth = []
-    truth_assessment = []
+    rows = []
     for i in range(len(truth_masks)):
         labeled_truth, max_truth = get_objects(truth_masks[i])
         labeled_pred, max_pred = get_objects(pred_masks[i], pred_thresh)
-        truth_matched, pred_matched, truth_sizes, pred_sizes = match_objects(
+        truth_match, pred_matched, truth_sizes, pred_sizes = match_objects(
             labeled_truth, max_truth, labeled_pred, max_pred, iou_thresh)
-        all_sizes_truth.extend(truth_sizes.tolist())
-        truth_assessment.extend(truth_matched.astype(int).tolist())
-        all_sizes_preds.extend(pred_sizes.tolist())
-        pred_assessment.extend(pred_matched.astype(int).tolist())
+        for t, p in enumerate(truth_match):
+            if p >= 0:
+                rows.append(('tp', truth_sizes[t], pred_sizes[p]))
+            else:
+                rows.append(('fn', truth_sizes[t], np.nan))
+        for p in np.flatnonzero(~pred_matched):
+            rows.append(('fp', np.nan, pred_sizes[p]))
 
+    return pd.DataFrame(rows, columns=['outcome', 'truth_size', 'pred_size'])
+
+
+def _bin_stats(size_class, object_df, lo, hi):
+    """One row of the size-binned table for sizes in (lo, hi].
+
+    Precision is per predicted object binned by its own size (user's accuracy)
+    and recall per truth object binned by its own size (producer's accuracy),
+    so a TP pair can count toward different bins on each side: ``tp_pred`` is
+    the matched preds in this bin and ``tp_true`` the matched truth objects.
+    """
+    preds = object_df[(object_df['pred_size'] > lo) & (object_df['pred_size'] <= hi)]
+    truths = object_df[(object_df['truth_size'] > lo) & (object_df['truth_size'] <= hi)]
+    total_pred, total_true = len(preds), len(truths)
+    tp_pred = int((preds['outcome'] == 'tp').sum())
+    tp_true = int((truths['outcome'] == 'tp').sum())
+    precision = tp_pred / total_pred if total_pred > 0 else 0
+    recall = tp_true / total_true if total_true > 0 else 0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall > 0 else 0
     return {
-        'truth_sizes': all_sizes_truth,
-        'truth_assessment': truth_assessment,
-        'pred_sizes': all_sizes_preds,
-        'pred_assessment': pred_assessment
+        'size_class': size_class,
+        'total_true': total_true,
+        'total_pred': total_pred,
+        'tp_true': tp_true,
+        'tp_pred': tp_pred,
+        'fp': total_pred - tp_pred,
+        'fn': total_true - tp_true,
+        'precision': precision,
+        'recall': recall,
+        'f1': f1,
     }
 
 
-def process_size_stats(true_df, pred_df, size_dict):
-    all_dicts = []
-    for size_class, sizes in size_dict.items():
-        temp_true = true_df.loc[(true_df['size']>sizes[0])&(true_df['size']<=sizes[1])]
-        temp_pred = pred_df.loc[(pred_df['size']>sizes[0])&(pred_df['size']<=sizes[1])]
-        out_dict = {
-            'size_class': size_class,
-            'total_true':temp_true.shape[0],
-            'total_pred': temp_pred.shape[0],
-            'tp_true': temp_true['tp'].sum().item(),
-            'tp_pred': temp_pred['tp'].sum().item()
-        }
-        out_dict['precision'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0
-        out_dict['recall'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_true.shape[0] if temp_true.shape[0]>0 else 0
-        print(out_dict)
-        all_dicts.append(out_dict)
+def process_size_stats(object_df, size_dict):
+    """Size-binned object precision/recall
+
+    Follows the map-accuracy convention: each predicted object is binned by its
+    own size for precision, each truth object by its own size for recall, so
+    ``total_pred``/``total_true`` are the real object counts per class. The
+    'all' row excludes the smallest and largest (``remove_*``) classes.
+    """
+    all_dicts = [_bin_stats(size_class, object_df, lo, hi)
+                 for size_class, (lo, hi) in size_dict.items()]
+
     # Overall precision and recall
-    smallest_size = list(size_dict.keys())[0]
-    largest_size = list(size_dict.keys())[-1]
+    lo = list(size_dict.values())[0][1]
+    hi = list(size_dict.values())[-1][0]
+    all_dicts.append(_bin_stats('all', object_df, lo, hi))
 
-
-    temp_true = true_df.loc[(true_df['size']>size_dict[smallest_size][1])
-                            &(true_df['size']<=size_dict[largest_size][0])]
-    temp_pred = pred_df.loc[(pred_df['size']>size_dict[smallest_size][1])
-                            &(pred_df['size']<=size_dict[largest_size][0])]
-    out_dict = {
-        'size_class': 'all',
-        'total_true':temp_true.shape[0],
-        'total_pred': temp_pred.shape[0],
-        'tp_true': temp_true['tp'].sum().item(),
-        'tp_pred': temp_pred['tp'].sum().item()
-        }
-    out_dict['precision'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_pred.shape[0] if temp_pred.shape[0]>0 else 0
-    out_dict['recall'] = min(out_dict['tp_true'], out_dict['tp_pred']) / temp_true.shape[0] if temp_true.shape[0]>0 else 0
-    print(out_dict)
-    all_dicts.append(out_dict)
     full_df = pd.DataFrame(all_dicts)
+    print(full_df.to_string(index=False, float_format='%.3f'))
     return full_df
 
 
@@ -569,7 +582,7 @@ def pr_curve(preds_path, truth_path):
     return precision_recall_curve(truth, preds)
 
 
-def report_object_stats(truth, preds, best_cutoff, iou_thresh=0.0):
+def report_object_stats(truth, preds, best_cutoff, iou_thresh=0.0, size_dict=SIZE_DICT):
     """Print object-level and size-binned precision/recall for one prediction set.
 
     Args:
@@ -577,6 +590,8 @@ def report_object_stats(truth, preds, best_cutoff, iou_thresh=0.0):
         preds: float prediction array (n, h, w).
         best_cutoff: probability threshold used to binarize ``preds``.
         iou_thresh: minimum IoU for a truth/pred object match (0 = any overlap).
+        size_dict: the sensor's size classes (``SIZE_DICT_SENTINEL`` or
+            ``SIZE_DICT_LANDSAT``).
     """
     if iou_thresh == 0:
         # Object counts/areas don't depend on the matching threshold.
@@ -585,17 +600,14 @@ def report_object_stats(truth, preds, best_cutoff, iou_thresh=0.0):
     else:
         print(f'--- object matching: IoU >= {iou_thresh} ---')
 
-    size_stats_dict = get_size_stats_dict(truth, preds, pred_thresh=best_cutoff,
-                                          iou_thresh=iou_thresh)
-    pred_df = pd.DataFrame({'size': np.array(size_stats_dict['pred_sizes']),
-                            'tp': np.array(size_stats_dict['pred_assessment'])})
-    true_df = pd.DataFrame({'size': np.array(size_stats_dict['truth_sizes']),
-                            'tp': np.array(size_stats_dict['truth_assessment'])})
-    full_df = process_size_stats(true_df, pred_df, SIZE_DICT)
-    return full_df
+    # Match all predictions
+    object_df = get_object_table(truth, preds, pred_thresh=best_cutoff, iou_thresh=iou_thresh,
+                                 size_dict=size_dict)
+    return process_size_stats(object_df, size_dict)
 
 
-def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=True, best_cutoff=0.5, crop_to_400=False):
+def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=True, best_cutoff=0.5,
+                    crop_to_400=False, size_dict=SIZE_DICT):
     preds = np.load(preds_path)
     truth = torch.Tensor(np.load(truth_path)).long()
     if crop_to_400:
@@ -610,7 +622,8 @@ def full_evaluation(preds_path, truth_path, img_dir, per_image_csv, find_cutoff=
 
     # Object-level and size-binned stats, once per IoU matching threshold
     for iou_thresh in IOU_THRESHOLDS:
-        object_df = report_object_stats(truth, preds, best_cutoff, iou_thresh=iou_thresh)
+        object_df = report_object_stats(truth, preds, best_cutoff, iou_thresh=iou_thresh,
+                                        size_dict=size_dict)
         object_csv = per_image_csv.replace(
             'per_image.csv', f'object_stats{object_csv_suffix(iou_thresh)}.csv')
         object_df.to_csv(object_csv, index=False)

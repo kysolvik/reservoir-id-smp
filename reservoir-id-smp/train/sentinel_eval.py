@@ -70,6 +70,7 @@ def evaluate_split(split, best_cutoff=BEST_CUTOFF):
     eval_helpers.full_evaluation(
         preds_path, masks_path, img_dir, per_image_csv,
         find_cutoff=False, best_cutoff=best_cutoff, crop_to_400=False,
+        size_dict=eval_helpers.SIZE_DICT_SENTINEL,
     )
 
 

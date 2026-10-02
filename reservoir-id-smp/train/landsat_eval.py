@@ -84,7 +84,8 @@ def report_object_stats(preds, cutoffs, split, get_masks):
             continue
         print(f'\n--- {s} ({split}) @ cutoff {c} ---')
         for t in eval_helpers.IOU_THRESHOLDS:
-            object_df = eval_helpers.report_object_stats(masks_t, p, c, iou_thresh=t)
+            object_df = eval_helpers.report_object_stats(
+                masks_t, p, c, iou_thresh=t, size_dict=eval_helpers.SIZE_DICT_LANDSAT)
             suffix = eval_helpers.object_csv_suffix(t)
             object_csv = os.path.join(PRED_DIR, f'{s}_{split}_object_stats{suffix}.csv')
             object_df.to_csv(object_csv, index=False)
